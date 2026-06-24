@@ -54,5 +54,4 @@ python scripts/seed_demo.py
 
 - Platform ingestion is modeled as API ingestion. You can integrate real connectors for X/Facebook/WhatsApp later by posting collected mentions into `POST /api/mentions`.
 - Harmful claim detection and sentiment are rule-based in this MVP for reliability and zero external model dependency.
-# narrative
-# narrative
+- Vercel runtime: without `DATABASE_URL`, the app auto-uses `/tmp/narrative.db` so SQLite works on serverless.
