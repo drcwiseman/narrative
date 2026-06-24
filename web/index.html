@@ -1,0 +1,203 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Narrative Monitoring Dashboard</title>
+    <style>
+      :root {
+        font-family: Arial, sans-serif;
+        color-scheme: dark;
+      }
+      body {
+        margin: 0;
+        padding: 1rem;
+        background: #111827;
+        color: #e5e7eb;
+      }
+      h1, h2 { margin: 0 0 0.75rem; }
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+        gap: 1rem;
+      }
+      .card {
+        background: #1f2937;
+        border: 1px solid #374151;
+        border-radius: 10px;
+        padding: 1rem;
+      }
+      .item {
+        border-bottom: 1px solid #374151;
+        padding: 0.5rem 0;
+      }
+      .item:last-child { border-bottom: 0; }
+      .pill {
+        display: inline-block;
+        margin-left: 0.5rem;
+        padding: 0.12rem 0.45rem;
+        border-radius: 999px;
+        font-size: 0.8rem;
+        background: #374151;
+      }
+      .harmful { background: #7f1d1d; }
+      input, button, select, textarea {
+        width: 100%;
+        margin: 0.25rem 0 0.5rem;
+        background: #111827;
+        color: #e5e7eb;
+        border: 1px solid #4b5563;
+        border-radius: 6px;
+        padding: 0.45rem;
+      }
+      button {
+        cursor: pointer;
+        background: #2563eb;
+        border: 0;
+      }
+      small { color: #9ca3af; }
+    </style>
+  </head>
+  <body>
+    <h1>Narrative Monitoring Dashboard</h1>
+    <small>Real-time monitoring, KOL scoring, and outreach coordination.</small>
+
+    <div class="grid" style="margin-top: 1rem;">
+      <section class="card">
+        <h2>Ingest Mention</h2>
+        <form id="mentionForm">
+          <input name="platform" placeholder="Platform (x, facebook, whatsapp)" required />
+          <input name="author_handle" placeholder="@handle" required />
+          <input name="author_name" placeholder="Author Name" />
+          <input name="followers" placeholder="Followers" type="number" value="0" />
+          <input name="engagement_rate" placeholder="Engagement Rate (0.0-1.0)" type="number" step="0.01" value="0.1" />
+          <input name="constituency" placeholder="Constituency" value="central" />
+          <textarea name="content" placeholder="Mention text..." required></textarea>
+          <button type="submit">Submit Mention</button>
+        </form>
+      </section>
+
+      <section class="card">
+        <h2>Create Campaign</h2>
+        <form id="campaignForm">
+          <input name="name" placeholder="Campaign Name" required />
+          <input name="constituency" placeholder="Constituency" value="central" />
+          <textarea name="message" placeholder="Counter-message..." required></textarea>
+          <button type="submit">Create Campaign</button>
+        </form>
+      </section>
+    </div>
+
+    <div class="grid" style="margin-top: 1rem;">
+      <section class="card">
+        <h2>Live Mention Feed</h2>
+        <div id="mentions"></div>
+      </section>
+      <section class="card">
+        <h2>Harmful Alerts</h2>
+        <div id="alerts"></div>
+      </section>
+      <section class="card">
+        <h2>KOL Leaderboard</h2>
+        <button id="refreshKols">Refresh KOLs</button>
+        <div id="kols"></div>
+      </section>
+    </div>
+
+    <script>
+      const mentionsEl = document.getElementById("mentions");
+      const alertsEl = document.getElementById("alerts");
+      const kolsEl = document.getElementById("kols");
+
+      function esc(text) {
+        return String(text)
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;");
+      }
+
+      async function loadMentions() {
+        const res = await fetch("/api/monitoring/mentions");
+        const data = await res.json();
+        mentionsEl.innerHTML = data.map(row => `
+          <div class="item">
+            <b>${esc(row.author_handle)}</b> on ${esc(row.platform)}
+            ${row.is_harmful ? '<span class="pill harmful">harmful</span>' : ""}
+            <div>${esc(row.content)}</div>
+            <small>topic=${esc(row.topic)} sentiment=${row.sentiment_score} harmful=${row.harmful_claim_score}</small>
+          </div>
+        `).join("");
+      }
+
+      async function loadAlerts() {
+        const res = await fetch("/api/monitoring/alerts");
+        const data = await res.json();
+        alertsEl.innerHTML = data.map(row => `
+          <div class="item">
+            <b>${esc(row.author_handle)}</b> ${esc(row.platform)}
+            <span class="pill harmful">harmful=${row.harmful_claim_score}</span>
+            <div>${esc(row.content)}</div>
+          </div>
+        `).join("");
+      }
+
+      async function loadKols() {
+        const res = await fetch("/api/kols/leaderboard");
+        const data = await res.json();
+        kolsEl.innerHTML = data.map(row => `
+          <div class="item">
+            <b>${esc(row.handle)}</b>
+            <span class="pill">${esc(row.tier)}</span>
+            <div>${esc(row.constituency)} | score=${row.influence_score} | followers=${row.followers}</div>
+          </div>
+        `).join("");
+      }
+
+      document.getElementById("mentionForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const form = new FormData(e.target);
+        const payload = Object.fromEntries(form.entries());
+        payload.followers = Number(payload.followers || 0);
+        payload.engagement_rate = Number(payload.engagement_rate || 0);
+        await fetch("/api/mentions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        e.target.reset();
+        loadMentions();
+        loadAlerts();
+        loadKols();
+      });
+
+      document.getElementById("campaignForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const form = new FormData(e.target);
+        const payload = Object.fromEntries(form.entries());
+        await fetch("/api/campaigns", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        e.target.reset();
+        alert("Campaign created");
+      });
+
+      document.getElementById("refreshKols").addEventListener("click", loadKols);
+
+      const stream = new EventSource("/api/monitoring/stream");
+      stream.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        if (data.type === "mention_ingested") {
+          loadMentions();
+          loadAlerts();
+          loadKols();
+        }
+      };
+
+      loadMentions();
+      loadAlerts();
+      loadKols();
+    </script>
+  </body>
+</html>
