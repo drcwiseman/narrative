@@ -317,31 +317,72 @@
       </section>
 
       <section class="card hidden page-card" id="usersSection" data-page="settings">
-        <h2>User Management</h2>
-        <div class="toolbar">
-          <button id="loadUsers">Load Users</button>
+        <div class="card-head">
+          <div>
+            <h2>User Management (CRUD)</h2>
+            <p class="card-desc">Create, view, update, and remove platform users and roles.</p>
+          </div>
+          <button id="loadUsers" type="button" class="btn-secondary">Refresh</button>
         </div>
-        <form id="updateUserRoleForm">
-          <input name="user_id" type="number" placeholder="User ID" required />
-          <select name="role" required>
-            <option value="admin">admin</option>
-            <option value="platform_admin">platform_admin</option>
-            <option value="org_admin">org_admin</option>
-            <option value="coordinator">coordinator</option>
-            <option value="analyst">analyst</option>
-            <option value="outreach">outreach</option>
-          </select>
-          <button type="submit">Update Role</button>
+
+        <form id="createUserForm" class="form-grid form-narrow form-section">
+          <h3>Create User</h3>
+          <div><label for="createUserEmail">Email</label><input id="createUserEmail" name="email" type="email" autocomplete="off" placeholder="user@organization.com" required /></div>
+          <div><label for="createUserFullName">Full name</label><input id="createUserFullName" name="full_name" autocomplete="name" placeholder="Full name" /></div>
+          <div><label for="createUserPassword">Password</label><input id="createUserPassword" name="password" type="password" minlength="8" autocomplete="new-password" placeholder="Minimum 8 characters" required /></div>
+          <div>
+            <label for="createUserRole">Role</label>
+            <select id="createUserRole" name="role" required>
+              <option value="analyst">analyst</option>
+              <option value="coordinator">coordinator</option>
+              <option value="outreach">outreach</option>
+              <option value="org_admin">org_admin</option>
+              <option value="platform_admin">platform_admin</option>
+              <option value="admin">admin</option>
+            </select>
+          </div>
+          <button type="submit">Create User</button>
         </form>
-        <form id="updateUserActiveForm">
-          <input name="user_id" type="number" placeholder="User ID" required />
-          <select name="is_active" required>
-            <option value="1">active</option>
-            <option value="0">inactive</option>
-          </select>
-          <button type="submit">Update Active Status</button>
-        </form>
+
         <div id="usersList"></div>
+
+        <form id="updateUserForm" class="form-grid form-narrow form-section">
+          <h3>Edit User</h3>
+          <div class="form-row-2">
+            <div>
+              <label for="editUserId">User ID</label>
+              <input id="editUserId" name="user_id" type="number" placeholder="User ID" required />
+            </div>
+            <div class="row" style="align-items:flex-end;">
+              <button id="loadUserForEdit" type="button" class="btn-secondary">Load</button>
+            </div>
+          </div>
+          <div><label for="editUserFullName">Full name</label><input id="editUserFullName" name="full_name" placeholder="Full name" /></div>
+          <div>
+            <label for="editUserRole">Role</label>
+            <select id="editUserRole" name="role" required>
+              <option value="analyst">analyst</option>
+              <option value="coordinator">coordinator</option>
+              <option value="outreach">outreach</option>
+              <option value="org_admin">org_admin</option>
+              <option value="platform_admin">platform_admin</option>
+              <option value="admin">admin</option>
+            </select>
+          </div>
+          <div>
+            <label for="editUserActive">Status</label>
+            <select id="editUserActive" name="is_active" required>
+              <option value="1">active</option>
+              <option value="0">inactive</option>
+            </select>
+          </div>
+          <div><label for="editUserPassword">Reset password (optional)</label><input id="editUserPassword" name="password" type="password" minlength="8" autocomplete="new-password" placeholder="Leave blank to keep current password" /></div>
+          <div class="toolbar">
+            <button type="submit">Save Changes</button>
+            <button id="deleteUserBtn" type="button" class="btn-danger">Delete User</button>
+          </div>
+        </form>
+        <small id="userManageResult"></small>
       </section>
 
       <section class="card hidden page-card" id="detectionRulesSection" data-page="settings">
@@ -577,6 +618,12 @@
       const auditLogsListEl = document.getElementById("auditLogsList");
       const usersSectionEl = document.getElementById("usersSection");
       const usersListEl = document.getElementById("usersList");
+      const userManageResultEl = document.getElementById("userManageResult");
+      const editUserIdEl = document.getElementById("editUserId");
+      const editUserFullNameEl = document.getElementById("editUserFullName");
+      const editUserRoleEl = document.getElementById("editUserRole");
+      const editUserActiveEl = document.getElementById("editUserActive");
+      const editUserPasswordEl = document.getElementById("editUserPassword");
       const detectionRulesSectionEl = document.getElementById("detectionRulesSection");
       const negativeWordsInputEl = document.getElementById("negativeWordsInput");
       const harmfulPatternsInputEl = document.getElementById("harmfulPatternsInput");
@@ -627,6 +674,9 @@
         if (window.NarrativeTheme) window.NarrativeTheme.updatePageHero(activePage);
         if (activePage === "intelligence") {
           loadIntelligencePage().catch(console.error);
+        }
+        if (activePage === "settings" && currentRole === "admin") {
+          loadUsers().catch(console.error);
         }
       }
 
@@ -1035,16 +1085,43 @@
         `).join("") : "<small>No audit logs yet.</small>";
       }
 
+      function fillUserEditForm(user) {
+        editUserIdEl.value = String(user.id);
+        editUserFullNameEl.value = user.full_name || "";
+        editUserRoleEl.value = user.role || "analyst";
+        editUserActiveEl.value = user.is_active ? "1" : "0";
+        editUserPasswordEl.value = "";
+      }
+
+      async function loadUserForEdit(userId) {
+        const res = await api(`/api/admin/users/${Number(userId)}`);
+        const user = await res.json();
+        fillUserEditForm(user);
+        userManageResultEl.textContent = `Loaded user #${user.id} (${user.email}) for editing.`;
+        return user;
+      }
+
       async function loadUsers() {
         const res = await api("/api/admin/users");
         const data = await res.json();
-        usersListEl.innerHTML = data.length ? data.map((row) => `
-          <div class="item">
-            <b>#${row.id} ${esc(row.email)}</b>
-            <span class="pill">${esc(row.role)}</span>
-            <small>${row.is_active ? "active" : "inactive"}</small>
+        if (!data.length) {
+          usersListEl.innerHTML = '<div class="empty-state">No users found. Create the first user above.</div>';
+          return;
+        }
+        usersListEl.innerHTML = data.map((row) => `
+          <div class="feed-item">
+            <div class="feed-meta">
+              <b>#${row.id} ${esc(row.email)}</b>
+              <span class="pill">${esc(row.role)}</span>
+              <span class="pill ${row.is_active ? "connected" : "disconnected"}">${row.is_active ? "active" : "inactive"}</span>
+            </div>
+            <small>${esc(row.full_name || "No name")} · created ${esc(row.created_at || "n/a")}</small>
+            <div class="toolbar">
+              <button type="button" class="btn-secondary" data-edit-user="${row.id}">Edit</button>
+              <button type="button" class="btn-danger" data-delete-user="${row.id}">Delete</button>
+            </div>
           </div>
-        `).join("") : "<small>No users found.</small>";
+        `).join("");
       }
 
       function renderProfile(profile) {
@@ -1658,26 +1735,88 @@
         loadUsers().catch((err) => alert(err.message));
       });
 
-      document.getElementById("updateUserRoleForm").addEventListener("submit", async (e) => {
+      document.getElementById("createUserForm").addEventListener("submit", async (e) => {
         e.preventDefault();
         try {
           const payload = Object.fromEntries(new FormData(e.target).entries());
-          await api(`/api/admin/users/${Number(payload.user_id)}/role?role=${encodeURIComponent(payload.role)}`, {
-            method: "PATCH",
+          await api("/api/admin/users", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
           });
+          e.target.reset();
+          userManageResultEl.textContent = `User ${payload.email} created.`;
           await loadUsers();
         } catch (err) {
           alert(err.message);
         }
       });
 
-      document.getElementById("updateUserActiveForm").addEventListener("submit", async (e) => {
+      usersListEl.addEventListener("click", async (e) => {
+        const editBtn = e.target.closest("[data-edit-user]");
+        const deleteBtn = e.target.closest("[data-delete-user]");
+        try {
+          if (editBtn) {
+            await loadUserForEdit(editBtn.dataset.editUser);
+            return;
+          }
+          if (deleteBtn) {
+            const userId = Number(deleteBtn.dataset.deleteUser);
+            if (!confirm(`Delete user #${userId}? This permanently removes the account.`)) return;
+            await api(`/api/admin/users/${userId}`, { method: "DELETE" });
+            userManageResultEl.textContent = `User #${userId} deleted.`;
+            document.getElementById("updateUserForm").reset();
+            await loadUsers();
+          }
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("loadUserForEdit").addEventListener("click", async () => {
+        try {
+          const userId = Number(editUserIdEl.value);
+          if (!userId) return alert("Enter a user ID");
+          await loadUserForEdit(userId);
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("updateUserForm").addEventListener("submit", async (e) => {
         e.preventDefault();
         try {
           const payload = Object.fromEntries(new FormData(e.target).entries());
-          await api(`/api/admin/users/${Number(payload.user_id)}/active?is_active=${encodeURIComponent(payload.is_active)}`, {
+          const userId = Number(payload.user_id);
+          const body = {
+            full_name: payload.full_name,
+            role: payload.role,
+            is_active: payload.is_active === "1",
+          };
+          if (String(payload.password || "").trim()) {
+            body.password = payload.password;
+          }
+          await api(`/api/admin/users/${userId}`, {
             method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(body),
           });
+          userManageResultEl.textContent = `User #${userId} updated.`;
+          editUserPasswordEl.value = "";
+          await loadUsers();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("deleteUserBtn").addEventListener("click", async () => {
+        try {
+          const userId = Number(editUserIdEl.value);
+          if (!userId) return alert("Enter a user ID to delete");
+          if (!confirm(`Delete user #${userId}? This permanently removes the account.`)) return;
+          await api(`/api/admin/users/${userId}`, { method: "DELETE" });
+          userManageResultEl.textContent = `User #${userId} deleted.`;
+          document.getElementById("updateUserForm").reset();
           await loadUsers();
         } catch (err) {
           alert(err.message);

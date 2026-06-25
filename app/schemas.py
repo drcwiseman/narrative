@@ -108,9 +108,24 @@ class UserOut(BaseModel):
     full_name: str
     role: str
     is_active: bool
+    created_at: datetime | None = None
 
     class Config:
         from_attributes = True
+
+
+class AdminUserCreate(BaseModel):
+    email: str
+    full_name: str = ""
+    password: str = Field(min_length=8)
+    role: str = "analyst"
+
+
+class AdminUserUpdate(BaseModel):
+    full_name: str | None = None
+    role: str | None = None
+    is_active: bool | None = None
+    password: str | None = Field(default=None, min_length=8)
 
 
 class ProfileUpdateRequest(BaseModel):

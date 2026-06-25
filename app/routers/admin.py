@@ -1,4 +1,5 @@
 import secrets
+from datetime import datetime, timezone
 from fastapi.responses import StreamingResponse
 import io
 import csv
@@ -8,8 +9,10 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import require_roles
-from app.models import AlertEndpoint, AuditLog, ConnectorKey, IntegrationCredential, Organization, OrganizationMember, User
+from app.models import AlertEndpoint, AuditLog, ConnectorKey, IntegrationCredential, Organization, OrganizationMember, RevokedSubject, User
 from app.schemas import (
+    AdminUserCreate,
+    AdminUserUpdate,
     AlertEndpointCreate,
     ConnectorKeyCreate,
     DetectionRulesUpdate,
@@ -18,12 +21,35 @@ from app.schemas import (
     OrganizationMemberUpsert,
 )
 from app.services.notifications import dispatch_harmful_alerts
-from app.security import hash_connector_token
+from app.security import hash_connector_token, hash_password
 from app.services.audit import write_audit_log
 from app.services.detection_rules import get_detection_rules, update_detection_rules
 
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
+
+VALID_USER_ROLES = {"admin", "platform_admin", "org_admin", "coordinator", "analyst", "outreach"}
+
+
+def _user_out(row: User) -> dict:
+    return {
+        "id": row.id,
+        "email": row.email,
+        "full_name": row.full_name,
+        "role": row.role,
+        "is_active": bool(row.is_active),
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+    }
+
+
+def _revoke_user_sessions(db: Session, email: str) -> None:
+    cutoff = int(datetime.now(timezone.utc).timestamp())
+    existing = db.query(RevokedSubject).filter(RevokedSubject.email == email).first()
+    if existing:
+        existing.revoke_before_epoch = cutoff
+        existing.updated_at = datetime.utcnow()
+    else:
+        db.add(RevokedSubject(email=email, revoke_before_epoch=cutoff))
 
 
 @router.post("/connector-keys")
@@ -185,16 +211,112 @@ def export_audit_logs(
 @router.get("/users")
 def list_users(db: Session = Depends(get_db), current_user: User = Depends(require_roles("admin"))):
     rows = db.query(User).order_by(User.created_at.desc()).all()
-    return [
-        {
-            "id": row.id,
-            "email": row.email,
-            "full_name": row.full_name,
-            "role": row.role,
-            "is_active": bool(row.is_active),
-        }
-        for row in rows
-    ]
+    return [_user_out(row) for row in rows]
+
+
+@router.post("/users")
+def create_user(
+    payload: AdminUserCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+):
+    if payload.role not in VALID_USER_ROLES:
+        raise HTTPException(status_code=400, detail="Invalid role")
+    email = payload.email.lower().strip()
+    if not email:
+        raise HTTPException(status_code=400, detail="Email is required")
+    existing = db.query(User).filter(User.email == email).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="User already exists")
+
+    user = User(
+        email=email,
+        full_name=payload.full_name.strip(),
+        password_hash=hash_password(payload.password),
+        role=payload.role,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    write_audit_log(
+        db,
+        current_user,
+        "user.create",
+        "user",
+        str(user.id),
+        {"email": user.email, "role": user.role},
+    )
+    return _user_out(user)
+
+
+@router.get("/users/{user_id}")
+def get_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    return _user_out(user)
+
+
+@router.patch("/users/{user_id}")
+def update_user(
+    user_id: int,
+    payload: AdminUserUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    updates: dict = {}
+    if payload.full_name is not None:
+        user.full_name = payload.full_name.strip()
+        updates["full_name"] = user.full_name
+    if payload.role is not None:
+        if payload.role not in VALID_USER_ROLES:
+            raise HTTPException(status_code=400, detail="Invalid role")
+        user.role = payload.role
+        updates["role"] = payload.role
+    if payload.is_active is not None:
+        user.is_active = 1 if payload.is_active else 0
+        updates["is_active"] = bool(user.is_active)
+        if not payload.is_active:
+            _revoke_user_sessions(db, user.email)
+    if payload.password:
+        user.password_hash = hash_password(payload.password)
+        updates["password_updated"] = True
+        _revoke_user_sessions(db, user.email)
+    if not updates:
+        raise HTTPException(status_code=400, detail="No user fields to update")
+
+    db.commit()
+    db.refresh(user)
+    write_audit_log(db, current_user, "user.update", "user", str(user.id), updates)
+    return _user_out(user)
+
+
+@router.delete("/users/{user_id}")
+def delete_user(
+    user_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+):
+    user = db.query(User).filter(User.id == user_id).first()
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.email == current_user.email:
+        raise HTTPException(status_code=400, detail="You cannot delete your own account from admin panel")
+
+    email = user.email
+    _revoke_user_sessions(db, email)
+    db.delete(user)
+    db.commit()
+    write_audit_log(db, current_user, "user.delete", "user", str(user_id), {"email": email})
+    return {"ok": True, "deleted_user_id": user_id, "email": email}
 
 
 @router.patch("/users/{user_id}/role")
@@ -204,7 +326,7 @@ def update_user_role(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin")),
 ):
-    if role not in {"admin", "platform_admin", "org_admin", "coordinator", "analyst", "outreach"}:
+    if role not in VALID_USER_ROLES:
         raise HTTPException(status_code=400, detail="Invalid role")
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
