@@ -2,27 +2,30 @@ from datetime import datetime
 
 import json
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import require_roles
-from app.models import Analysis, Claim, EmotionSignal, IdempotencyRecord, Mention, Narrative, User
+from app.models import Analysis, Claim, EmotionSignal, IdempotencyRecord, Mention, MentionIngestTrace, Narrative, User
 from app.observability import METRICS
 from app.schemas import MentionCreate, MentionUpdate
 from app.services.analyzer import emotion_scores, extract_claim_candidates, extract_topic, harmful_claim_score, score_sentiment
 from app.services.audit import write_audit_log
 from app.services.detection_rules import get_detection_rules
 from app.services.kol import decrement_kol_from_mention, delete_mention_record, purge_author_handle, upsert_kol_from_mention
+from app.services.mention_trace import save_mention_trace
 from app.services.narratives import add_claims, add_emotion_signal, upsert_emotion_signal, upsert_narrative
 from app.services.notifications import dispatch_harmful_alerts
+from app.services.request_trace import IngestTraceContext, extract_client_ip
 from app.services.stream import event_stream
 
 
 router = APIRouter(prefix="/api/mentions", tags=["mentions"])
 
 
-def _mention_out(mention: Mention, analysis: Analysis) -> dict:
+def _mention_out(mention: Mention, analysis: Analysis, trace: MentionIngestTrace | None = None) -> dict:
+    trace_ip = trace.source_ip if trace else ""
     return {
         "id": mention.id,
         "platform": mention.platform,
@@ -32,6 +35,11 @@ def _mention_out(mention: Mention, analysis: Analysis) -> dict:
         "engagement_rate": mention.engagement_rate,
         "constituency": mention.constituency,
         "content": mention.content,
+        "origin_ip": mention.origin_ip or "",
+        "source_ip": trace_ip,
+        "trace_ip": mention.origin_ip or trace_ip,
+        "ingest_channel": trace.ingest_channel if trace else "",
+        "forwarded_for": trace.forwarded_for if trace else "",
         "posted_at": mention.posted_at.isoformat(),
         "sentiment_score": analysis.sentiment_score,
         "topic": analysis.topic,
@@ -40,10 +48,11 @@ def _mention_out(mention: Mention, analysis: Analysis) -> dict:
     }
 
 
-def _get_mention_with_analysis(db: Session, mention_id: int) -> tuple[Mention, Analysis]:
+def _get_mention_with_analysis(db: Session, mention_id: int) -> tuple[Mention, Analysis, MentionIngestTrace | None]:
     row = (
-        db.query(Mention, Analysis)
+        db.query(Mention, Analysis, MentionIngestTrace)
         .join(Analysis, Analysis.mention_id == Mention.id)
+        .outerjoin(MentionIngestTrace, MentionIngestTrace.mention_id == Mention.id)
         .filter(Mention.id == mention_id)
         .first()
     )
@@ -160,7 +169,12 @@ def _sync_mention_derivatives(
     }
 
 
-async def ingest_mention_internal(payload: MentionCreate, db: Session, actor_email: str = "system"):
+async def ingest_mention_internal(
+    payload: MentionCreate,
+    db: Session,
+    actor_email: str = "system",
+    trace: IngestTraceContext | None = None,
+):
     mention = Mention(
         platform=payload.platform,
         author_handle=payload.author_handle,
@@ -169,11 +183,13 @@ async def ingest_mention_internal(payload: MentionCreate, db: Session, actor_ema
         engagement_rate=payload.engagement_rate,
         constituency=payload.constituency,
         content=payload.content,
+        origin_ip=(payload.origin_ip or "").strip()[:64],
         posted_at=payload.posted_at or datetime.utcnow(),
     )
     db.add(mention)
     db.commit()
     db.refresh(mention)
+    save_mention_trace(db, mention.id, trace)
 
     analysis = _analyze_mention(db, mention)
     derived = _sync_mention_derivatives(db, mention, analysis, is_new=True)
@@ -208,8 +224,8 @@ def get_mention(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "coordinator", "analyst", "outreach")),
 ):
-    mention, analysis = _get_mention_with_analysis(db, mention_id)
-    return _mention_out(mention, analysis)
+    mention, analysis, trace_row = _get_mention_with_analysis(db, mention_id)
+    return _mention_out(mention, analysis, trace_row)
 
 
 @router.patch("/{mention_id}")
@@ -219,7 +235,7 @@ async def update_mention(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "coordinator", "analyst")),
 ):
-    mention, analysis = _get_mention_with_analysis(db, mention_id)
+    mention, analysis, _trace_row = _get_mention_with_analysis(db, mention_id)
     previous_handle = mention.author_handle
     updates = payload.model_dump(exclude_unset=True)
     if not updates:
@@ -251,6 +267,8 @@ async def update_mention(
         if not content:
             raise HTTPException(status_code=400, detail="Content cannot be empty")
         mention.content = content
+    if "origin_ip" in updates:
+        mention.origin_ip = (updates["origin_ip"] or "").strip()[:64]
     if "posted_at" in updates and updates["posted_at"] is not None:
         mention.posted_at = updates["posted_at"]
 
@@ -283,7 +301,8 @@ async def update_mention(
         str(mention.id),
         {"fields": sorted(updates.keys())},
     )
-    return {"ok": True, "mention": _mention_out(mention, analysis)}
+    mention, analysis, trace_row = _get_mention_with_analysis(db, mention_id)
+    return {"ok": True, "mention": _mention_out(mention, analysis, trace_row)}
 
 
 @router.delete("/{mention_id}")
@@ -315,6 +334,7 @@ def delete_mention(
 @router.post("")
 async def ingest_mention(
     payload: MentionCreate,
+    request: Request,
     idempotency_key: str | None = Header(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "coordinator", "analyst")),
@@ -326,7 +346,8 @@ async def ingest_mention(
                 return json.loads(existing.response_json)
             except json.JSONDecodeError:
                 return {"ok": True, "deduped": True}
-    result = await ingest_mention_internal(payload, db, actor_email=current_user.email)
+    trace = extract_client_ip(request, ingest_channel="manual_api")
+    result = await ingest_mention_internal(payload, db, actor_email=current_user.email, trace=trace)
     if idempotency_key:
         db.add(
             IdempotencyRecord(

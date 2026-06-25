@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.models import DeadLetterJob, QueueJob
 from app.routers.ingest import ingest_mention_internal
 from app.schemas import MentionCreate
+from app.services.request_trace import IngestTraceContext
 
 
 def enqueue_job(db: Session, job_type: str, payload: dict) -> QueueJob:
@@ -14,6 +15,12 @@ def enqueue_job(db: Session, job_type: str, payload: dict) -> QueueJob:
     db.commit()
     db.refresh(row)
     return row
+
+
+def _split_queue_payload(payload: dict) -> tuple[dict, IngestTraceContext | None]:
+    trace_raw = payload.pop("_ingest_trace", None)
+    trace = IngestTraceContext.from_dict(trace_raw)
+    return payload, trace
 
 
 async def process_pending_jobs(db: Session, max_jobs: int = 20) -> dict:
@@ -36,8 +43,14 @@ async def process_pending_jobs(db: Session, max_jobs: int = 20) -> dict:
             db.commit()
 
             if job.job_type == "mention_ingest":
-                mention_payload = MentionCreate(**payload)
-                await ingest_mention_internal(mention_payload, db, actor_email="queue-worker")
+                mention_data, trace = _split_queue_payload(payload)
+                mention_payload = MentionCreate(**mention_data)
+                await ingest_mention_internal(
+                    mention_payload,
+                    db,
+                    actor_email="queue-worker",
+                    trace=trace,
+                )
             else:
                 raise ValueError(f"Unknown job type: {job.job_type}")
 

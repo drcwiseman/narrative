@@ -85,6 +85,7 @@
             <div><label>Engagement rate</label><input name="engagement_rate" type="number" step="0.01" value="0.1" /></div>
           </div>
           <div><label>Constituency</label><input name="constituency" value="central" /></div>
+          <div><label>Known source IP (optional)</label><input name="origin_ip" placeholder="203.0.113.10 — if traced externally" /></div>
           <div><label>Mention text</label><textarea name="content" placeholder="Enter mention content..." required></textarea></div>
           <button type="submit">Submit Mention</button>
         </form>
@@ -449,6 +450,7 @@
             <div><label for="editMentionEngagement">Engagement rate</label><input id="editMentionEngagement" name="engagement_rate" type="number" step="0.01" value="0" /></div>
           </div>
           <div><label for="editMentionConstituency">Constituency</label><input id="editMentionConstituency" name="constituency" placeholder="central" required /></div>
+          <div><label for="editMentionOriginIp">Known source IP</label><input id="editMentionOriginIp" name="origin_ip" placeholder="203.0.113.10" /></div>
           <div><label for="editMentionContent">Mention text</label><textarea id="editMentionContent" name="content" placeholder="Enter mention content..." required></textarea></div>
           <div class="toolbar">
             <button type="submit">Save Changes</button>
@@ -465,6 +467,28 @@
           </div>
         </div>
         <div id="alerts"></div>
+      </section>
+
+      <section class="card page-card" data-page="monitoring" id="rumorIpTrace">
+        <div class="card-head">
+          <div>
+            <h2>Rumor IP Trace</h2>
+            <p class="card-desc">Trace rumor spread by delivery IP, investigator-supplied origin IP, and linked handles.</p>
+          </div>
+          <button id="refreshIpClusters" type="button" class="btn-secondary">Refresh</button>
+        </div>
+        <form id="rumorTraceForm" class="form-grid form-narrow">
+          <div class="form-row-2">
+            <div><label for="rumorTraceIp">Search IP</label><input id="rumorTraceIp" name="ip" placeholder="203.0.113.10" /></div>
+            <div style="display:flex;align-items:flex-end;gap:0.5rem;">
+              <label><input id="rumorTraceHarmfulOnly" type="checkbox" checked /> Harmful only</label>
+            </div>
+          </div>
+          <button type="submit">Trace IP</button>
+        </form>
+        <div id="ipClusters" class="form-section"></div>
+        <div id="rumorTraces"></div>
+        <small id="rumorTraceResult"></small>
       </section>
       <section class="card page-card" data-page="intelligence">
         <div class="card-head">
@@ -625,7 +649,11 @@
       const editMentionFollowersEl = document.getElementById("editMentionFollowers");
       const editMentionEngagementEl = document.getElementById("editMentionEngagement");
       const editMentionConstituencyEl = document.getElementById("editMentionConstituency");
+      const editMentionOriginIpEl = document.getElementById("editMentionOriginIp");
       const editMentionContentEl = document.getElementById("editMentionContent");
+      const ipClustersEl = document.getElementById("ipClusters");
+      const rumorTracesEl = document.getElementById("rumorTraces");
+      const rumorTraceResultEl = document.getElementById("rumorTraceResult");
       const alertsEl = document.getElementById("alerts");
       const kolsEl = document.getElementById("kols");
       const narrativeMapResultEl = document.getElementById("narrativeMapResult");
@@ -796,7 +824,7 @@
               ${row.is_harmful ? '<span class="pill harmful">High risk</span>' : ""}
             </div>
             <div class="feed-body">${esc(row.content)}</div>
-            <small>topic=${esc(row.topic)} · sentiment=${row.sentiment_score} · harmful=${row.harmful_claim_score}</small>
+            <small>topic=${esc(row.topic)} · sentiment=${row.sentiment_score} · harmful=${row.harmful_claim_score}${row.trace_ip ? ` · ip=${esc(row.trace_ip)}` : ""}${row.ingest_channel ? ` · via ${esc(row.ingest_channel)}` : ""}</small>
             <div class="toolbar">
               <button type="button" class="btn-secondary" data-edit-mention="${row.id}">Edit</button>
               <button type="button" class="btn-danger" data-delete-mention="${row.id}">Delete</button>
@@ -813,6 +841,7 @@
         editMentionFollowersEl.value = String(mention.followers ?? 0);
         editMentionEngagementEl.value = String(mention.engagement_rate ?? 0);
         editMentionConstituencyEl.value = mention.constituency || "";
+        editMentionOriginIpEl.value = mention.origin_ip || "";
         editMentionContentEl.value = mention.content || "";
       }
 
@@ -881,6 +910,66 @@
               <span class="pill harmful">score ${row.harmful_claim_score}</span>
             </div>
             <div class="feed-body">${esc(row.content)}</div>
+            <small>topic=${esc(row.topic)} · harmful=${row.harmful_claim_score}${row.trace_ip ? ` · ip=${esc(row.trace_ip)}` : ""}${row.ingest_channel ? ` · via ${esc(row.ingest_channel)}` : ""}</small>
+          </div>
+        `).join("");
+      }
+
+      async function loadIpClusters() {
+        const harmfulOnly = document.getElementById("rumorTraceHarmfulOnly").checked;
+        const res = await api(`/api/monitoring/ip-clusters?harmful_only=${harmfulOnly ? "true" : "false"}`);
+        const data = await res.json();
+        if (!data.length) {
+          ipClustersEl.innerHTML = '<div class="empty-state">No IP clusters yet. Ingest mentions or add a known source IP to begin tracing.</div>';
+          return;
+        }
+        ipClustersEl.innerHTML = `
+          <div class="data-table">
+            <div class="data-row data-head data-row-trace">
+              <span>IP</span><span>Mentions</span><span>Harmful</span><span>Handles</span><span>Channels</span><span>Last seen</span><span>Actions</span>
+            </div>
+            ${data.map((row) => `
+              <div class="data-row data-row-trace">
+                <span><b>${esc(row.ip)}</b></span>
+                <span>${row.mention_count}</span>
+                <span>${row.harmful_count}</span>
+                <span><small>${esc((row.handles || []).join(", "))}</small></span>
+                <span><small>${esc((row.channels || []).join(", "))}</small></span>
+                <span><small>${esc(row.last_seen || "")}</small></span>
+                <span><button type="button" class="btn-secondary btn-compact" data-trace-ip="${esc(row.ip)}">Trace</button></span>
+              </div>
+            `).join("")}
+          </div>
+        `;
+      }
+
+      async function loadRumorTraces(ip = "") {
+        const harmfulOnly = document.getElementById("rumorTraceHarmfulOnly").checked;
+        const params = new URLSearchParams();
+        if (ip) params.set("ip", ip);
+        if (harmfulOnly) params.set("harmful_only", "true");
+        const res = await api(`/api/monitoring/rumor-traces?${params.toString()}`);
+        const data = await res.json();
+        if (!data.length) {
+          rumorTracesEl.innerHTML = '<div class="empty-state">No rumor traces matched this filter.</div>';
+          return;
+        }
+        rumorTracesEl.innerHTML = data.map((row) => `
+          <div class="feed-item">
+            <div class="feed-meta">
+              <b>#${row.id} ${esc(row.author_handle)}</b>
+              <span class="pill">${esc(row.platform)}</span>
+              ${row.is_harmful ? '<span class="pill harmful">High risk</span>' : ""}
+              ${row.trace_ip ? `<span class="pill">${esc(row.trace_ip)}</span>` : ""}
+            </div>
+            <div class="feed-body">${esc(row.content)}</div>
+            <small>
+              topic=${esc(row.topic)} · harmful=${row.harmful_claim_score}
+              ${row.origin_ip ? ` · origin_ip=${esc(row.origin_ip)}` : ""}
+              ${row.source_ip ? ` · delivery_ip=${esc(row.source_ip)}` : ""}
+              ${row.ingest_channel ? ` · channel=${esc(row.ingest_channel)}` : ""}
+              ${row.forwarded_for ? ` · xff=${esc(row.forwarded_for)}` : ""}
+            </small>
           </div>
         `).join("");
       }
@@ -1331,7 +1420,11 @@
       }
 
       async function refreshAll() {
-        await Promise.all([loadExecutiveOverview(), loadMentions(), loadAlerts(), loadKols(), loadCampaigns()]);
+        const tasks = [loadExecutiveOverview(), loadMentions(), loadAlerts(), loadKols(), loadCampaigns()];
+        if (canUseAnalystTools(currentRole)) {
+          tasks.push(loadIpClusters(), loadRumorTraces(document.getElementById("rumorTraceIp").value.trim()));
+        }
+        await Promise.all(tasks);
       }
 
       function connectStream() {
@@ -1383,6 +1476,34 @@
         loadMentions().catch((err) => alert(err.message));
       });
 
+      document.getElementById("rumorTraceForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          const ip = document.getElementById("rumorTraceIp").value.trim();
+          await Promise.all([loadIpClusters(), loadRumorTraces(ip)]);
+          rumorTraceResultEl.textContent = ip ? `Showing traces for IP ${ip}.` : "Showing all rumor traces for current filter.";
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("refreshIpClusters").addEventListener("click", () => {
+        Promise.all([loadIpClusters(), loadRumorTraces(document.getElementById("rumorTraceIp").value.trim())]).catch((err) => alert(err.message));
+      });
+
+      ipClustersEl.addEventListener("click", async (e) => {
+        const traceBtn = e.target.closest("[data-trace-ip]");
+        if (!traceBtn) return;
+        try {
+          const ip = traceBtn.dataset.traceIp;
+          document.getElementById("rumorTraceIp").value = ip;
+          await loadRumorTraces(ip);
+          rumorTraceResultEl.textContent = `Showing traces for IP ${ip}.`;
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
       mentionsEl.addEventListener("click", async (e) => {
         const editBtn = e.target.closest("[data-edit-mention]");
         const deleteBtn = e.target.closest("[data-delete-mention]");
@@ -1426,6 +1547,7 @@
             followers: Number(editMentionFollowersEl.value || 0),
             engagement_rate: Number(editMentionEngagementEl.value || 0),
             constituency: editMentionConstituencyEl.value.trim(),
+            origin_ip: editMentionOriginIpEl.value.trim(),
             content: editMentionContentEl.value.trim(),
           };
           const res = await api(`/api/mentions/${mentionId}`, {

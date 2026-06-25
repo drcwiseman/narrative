@@ -13,9 +13,11 @@ from app.middleware import basic_rate_limit_middleware, request_context_middlewa
 from app.observability import metrics_snapshot
 from app.routers import admin, auth, campaigns, connectors, ingest, kol, monitoring, queue, reports
 from app.services.queue import process_pending_jobs
+from scripts.db_migrate import _ensure_origin_ip_column
 
 
 Base.metadata.create_all(bind=engine)
+_ensure_origin_ip_column()
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Narrative Monitoring System", version="0.1.0")

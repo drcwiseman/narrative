@@ -18,6 +18,7 @@ from app.deps import require_roles
 from app.models import ConnectorKey, IdempotencyRecord, IntegrationCredential
 from app.routers.ingest import ingest_mention_internal
 from app.services.queue import enqueue_job
+from app.services.request_trace import extract_client_ip
 from app.schemas import ConnectorScanRequest, GoogleSourceScanRequest, MentionCreate, SourceScanRequest
 from app.models import User
 from app.security import verify_connector_token
@@ -26,6 +27,14 @@ from app.security import verify_connector_token
 router = APIRouter(prefix="/api/connectors", tags=["connectors"])
 
 SUPPORTED_PLATFORMS = ["x", "facebook", "whatsapp", "google", "reddit", "youtube", "news", "blogs", "slack", "instagram", "telegram", "tiktok"]
+
+
+def _enqueue_mentions(db: Session, mentions: list[dict[str, Any]], request: Request, ingest_channel: str) -> list[int]:
+    trace = extract_client_ip(request, ingest_channel=ingest_channel)
+    trace_payload = trace.to_dict()
+    return [enqueue_job(db, "mention_ingest", {**mention, "_ingest_trace": trace_payload}).id for mention in mentions]
+
+
 SCAN_TEMPLATES = [
     "Election update says results are fake news across districts.",
     "Community jobs program is improving local businesses and trust.",
@@ -225,6 +234,7 @@ def _parse_slack_mentions(payload: dict[str, Any]) -> list[dict[str, Any]]:
 @router.post("/mentions")
 async def ingest_from_connector(
     payload: MentionCreate,
+    request: Request,
     x_connector_token: str | None = Header(default=None),
     x_source_id: str | None = Header(default=None),
     db: Session = Depends(get_db),
@@ -250,9 +260,16 @@ async def ingest_from_connector(
         engagement_rate=payload.engagement_rate,
         constituency=payload.constituency,
         content=payload.content,
+        origin_ip=payload.origin_ip,
         posted_at=payload.posted_at or datetime.utcnow(),
     )
-    result = await ingest_mention_internal(normalized_payload, db, actor_email=f"connector:{key.name}")
+    trace = extract_client_ip(request, ingest_channel="connector_api")
+    result = await ingest_mention_internal(
+        normalized_payload,
+        db,
+        actor_email=f"connector:{key.name}",
+        trace=trace,
+    )
     if x_source_id:
         dedupe_key = f"connector:{key.name}:{x_source_id}"
         db.add(
@@ -718,7 +735,7 @@ async def ingest_x_webhook(request: Request, db: Session = Depends(get_db)):
     mentions = _parse_x_mentions(payload)
     if not mentions:
         raise HTTPException(status_code=400, detail="No mention content found in X webhook payload")
-    job_ids = [enqueue_job(db, "mention_ingest", mention).id for mention in mentions]
+    job_ids = _enqueue_mentions(db, mentions, request, "webhook_x")
     return {"ok": True, "queued_jobs": len(job_ids), "queued_job_ids": job_ids}
 
 
@@ -771,7 +788,7 @@ async def ingest_facebook_webhook(request: Request, db: Session = Depends(get_db
         mentions = _parse_x_mentions(payload)  # fallback for manual test payloads
     if not mentions:
         raise HTTPException(status_code=400, detail="No mention content found in Facebook webhook payload")
-    job_ids = [enqueue_job(db, "mention_ingest", mention).id for mention in mentions]
+    job_ids = _enqueue_mentions(db, mentions, request, "webhook_facebook")
     return {"ok": True, "queued_jobs": len(job_ids), "queued_job_ids": job_ids}
 
 
@@ -810,7 +827,7 @@ async def ingest_whatsapp_webhook(request: Request, db: Session = Depends(get_db
         mentions = _parse_x_mentions(payload)  # fallback for manual test payloads
     if not mentions:
         raise HTTPException(status_code=400, detail="No mention content found in WhatsApp webhook payload")
-    job_ids = [enqueue_job(db, "mention_ingest", mention).id for mention in mentions]
+    job_ids = _enqueue_mentions(db, mentions, request, "webhook_whatsapp")
     return {"ok": True, "queued_jobs": len(job_ids), "queued_job_ids": job_ids}
 
 
@@ -836,5 +853,5 @@ async def ingest_slack_events(request: Request, db: Session = Depends(get_db)):
     mentions = _parse_slack_mentions(payload)
     if not mentions:
         return {"ok": True, "queued_jobs": 0, "reason": "No ingestible Slack message event"}
-    job_ids = [enqueue_job(db, "mention_ingest", mention).id for mention in mentions]
+    job_ids = _enqueue_mentions(db, mentions, request, "webhook_slack")
     return {"ok": True, "queued_jobs": len(job_ids), "queued_job_ids": job_ids}

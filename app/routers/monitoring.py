@@ -5,12 +5,12 @@ from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy import desc, func
+from sqlalchemy import desc, func, or_
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import authenticate_token, require_roles
-from app.models import Analysis, Campaign, EmotionSignal, KOLScore, Mention, Narrative, SavedView
+from app.models import Analysis, Campaign, EmotionSignal, KOLScore, Mention, MentionIngestTrace, Narrative, SavedView
 from app.models import User
 from app.services.stream import event_stream
 
@@ -33,6 +33,30 @@ def _extract_search_terms(query: str) -> list[str]:
     return [compact] if compact else []
 
 
+def _mention_trace_payload(mention: Mention, analysis: Analysis, trace: MentionIngestTrace | None) -> dict:
+    source_ip = trace.source_ip if trace else ""
+    trace_ip = mention.origin_ip or source_ip
+    return {
+        "id": mention.id,
+        "platform": mention.platform,
+        "author_handle": mention.author_handle,
+        "author_name": mention.author_name,
+        "constituency": mention.constituency,
+        "content": mention.content,
+        "origin_ip": mention.origin_ip or "",
+        "source_ip": source_ip,
+        "trace_ip": trace_ip,
+        "ingest_channel": trace.ingest_channel if trace else "",
+        "forwarded_for": trace.forwarded_for if trace else "",
+        "user_agent": trace.user_agent if trace else "",
+        "posted_at": mention.posted_at.isoformat(),
+        "sentiment_score": analysis.sentiment_score,
+        "topic": analysis.topic,
+        "harmful_claim_score": analysis.harmful_claim_score,
+        "is_harmful": bool(analysis.is_harmful),
+    }
+
+
 @router.get("/mentions")
 def get_recent_mentions(
     limit: int = 50,
@@ -41,27 +65,107 @@ def get_recent_mentions(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "coordinator", "analyst", "outreach")),
 ):
-    query = db.query(Mention, Analysis).join(Analysis, Analysis.mention_id == Mention.id)
+    query = (
+        db.query(Mention, Analysis, MentionIngestTrace)
+        .join(Analysis, Analysis.mention_id == Mention.id)
+        .outerjoin(MentionIngestTrace, MentionIngestTrace.mention_id == Mention.id)
+    )
     if start_time:
         query = query.filter(Mention.posted_at >= datetime.fromisoformat(start_time))
     if end_time:
         query = query.filter(Mention.posted_at <= datetime.fromisoformat(end_time))
     rows = query.order_by(desc(Mention.posted_at)).limit(min(limit, 250)).all()
+    return [_mention_trace_payload(mention, analysis, trace) for mention, analysis, trace in rows]
+
+
+@router.get("/rumor-traces")
+def rumor_traces(
+    ip: str | None = None,
+    harmful_only: bool = False,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "coordinator", "analyst")),
+):
+    query = (
+        db.query(Mention, Analysis, MentionIngestTrace)
+        .join(Analysis, Analysis.mention_id == Mention.id)
+        .outerjoin(MentionIngestTrace, MentionIngestTrace.mention_id == Mention.id)
+    )
+    if ip:
+        ip_value = ip.strip()
+        query = query.filter(
+            or_(
+                Mention.origin_ip == ip_value,
+                MentionIngestTrace.source_ip == ip_value,
+                MentionIngestTrace.forwarded_for.ilike(f"%{ip_value}%"),
+            )
+        )
+    if harmful_only:
+        query = query.filter(Analysis.is_harmful == 1)
+    rows = query.order_by(desc(Mention.posted_at)).limit(min(limit, 250)).all()
+    return [_mention_trace_payload(mention, analysis, trace) for mention, analysis, trace in rows]
+
+
+@router.get("/ip-clusters")
+def ip_clusters(
+    harmful_only: bool = False,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "coordinator", "analyst")),
+):
+    rows = (
+        db.query(Mention, Analysis, MentionIngestTrace)
+        .join(Analysis, Analysis.mention_id == Mention.id)
+        .outerjoin(MentionIngestTrace, MentionIngestTrace.mention_id == Mention.id)
+        .order_by(desc(Mention.posted_at))
+        .limit(2000)
+        .all()
+    )
+    clusters: dict[str, dict] = {}
+    for mention, analysis, trace in rows:
+        trace_ip = (mention.origin_ip or (trace.source_ip if trace else "")).strip()
+        if not trace_ip:
+            continue
+        if harmful_only and analysis.is_harmful != 1:
+            continue
+        bucket = clusters.setdefault(
+            trace_ip,
+            {
+                "ip": trace_ip,
+                "mention_count": 0,
+                "harmful_count": 0,
+                "handles": set(),
+                "platforms": set(),
+                "channels": set(),
+                "last_seen": mention.posted_at.isoformat(),
+            },
+        )
+        bucket["mention_count"] += 1
+        if analysis.is_harmful == 1:
+            bucket["harmful_count"] += 1
+        bucket["handles"].add(mention.author_handle)
+        bucket["platforms"].add(mention.platform)
+        if trace and trace.ingest_channel:
+            bucket["channels"].add(trace.ingest_channel)
+        if mention.posted_at.isoformat() > bucket["last_seen"]:
+            bucket["last_seen"] = mention.posted_at.isoformat()
+
+    ranked = sorted(
+        clusters.values(),
+        key=lambda row: (row["harmful_count"], row["mention_count"]),
+        reverse=True,
+    )[: min(limit, 250)]
     return [
         {
-            "id": mention.id,
-            "platform": mention.platform,
-            "author_handle": mention.author_handle,
-            "author_name": mention.author_name,
-            "constituency": mention.constituency,
-            "content": mention.content,
-            "posted_at": mention.posted_at.isoformat(),
-            "sentiment_score": analysis.sentiment_score,
-            "topic": analysis.topic,
-            "harmful_claim_score": analysis.harmful_claim_score,
-            "is_harmful": bool(analysis.is_harmful),
+            "ip": row["ip"],
+            "mention_count": row["mention_count"],
+            "harmful_count": row["harmful_count"],
+            "handles": sorted(row["handles"])[:12],
+            "platforms": sorted(row["platforms"]),
+            "channels": sorted(row["channels"]),
+            "last_seen": row["last_seen"],
         }
-        for mention, analysis in rows
+        for row in ranked
     ]
 
 
@@ -74,8 +178,9 @@ def get_alerts(
     current_user: User = Depends(require_roles("admin", "coordinator", "analyst", "outreach")),
 ):
     query = (
-        db.query(Mention, Analysis)
+        db.query(Mention, Analysis, MentionIngestTrace)
         .join(Analysis, Analysis.mention_id == Mention.id)
+        .outerjoin(MentionIngestTrace, MentionIngestTrace.mention_id == Mention.id)
         .filter(Analysis.is_harmful == 1)
     )
     if start_time:
@@ -91,9 +196,11 @@ def get_alerts(
             "content": mention.content,
             "topic": analysis.topic,
             "harmful_claim_score": analysis.harmful_claim_score,
+            "trace_ip": mention.origin_ip or (trace.source_ip if trace else ""),
+            "ingest_channel": trace.ingest_channel if trace else "",
             "posted_at": mention.posted_at.isoformat(),
         }
-        for mention, analysis in rows
+        for mention, analysis, trace in rows
     ]
 
 

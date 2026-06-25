@@ -4,7 +4,7 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.models import Analysis, Claim, EmotionSignal, KOLScore, Mention
+from app.models import Analysis, Claim, EmotionSignal, KOLScore, Mention, MentionIngestTrace
 
 
 def normalize_handle(handle: str) -> str:
@@ -24,6 +24,7 @@ def delete_mention_record(db: Session, mention: Mention) -> None:
     mention_id = mention.id
     db.query(Claim).filter(Claim.mention_id == mention_id).delete()
     db.query(EmotionSignal).filter(EmotionSignal.mention_id == mention_id).delete()
+    db.query(MentionIngestTrace).filter(MentionIngestTrace.mention_id == mention_id).delete()
     db.query(Analysis).filter(Analysis.mention_id == mention_id).delete()
     db.delete(mention)
 

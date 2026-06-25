@@ -17,6 +17,7 @@ class Mention(Base):
     engagement_rate: Mapped[float] = mapped_column(Float, default=0.0)
     constituency: Mapped[str] = mapped_column(String(128), index=True)
     content: Mapped[str] = mapped_column(Text)
+    origin_ip: Mapped[str] = mapped_column(String(64), default="", index=True)
     posted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -35,6 +36,18 @@ class Analysis(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     mention: Mapped[Mention] = relationship(back_populates="analysis")
+
+
+class MentionIngestTrace(Base):
+    __tablename__ = "mention_ingest_traces"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    mention_id: Mapped[int] = mapped_column(ForeignKey("mentions.id"), unique=True, index=True)
+    source_ip: Mapped[str] = mapped_column(String(64), index=True)
+    forwarded_for: Mapped[str] = mapped_column(Text, default="")
+    user_agent: Mapped[str] = mapped_column(String(512), default="")
+    ingest_channel: Mapped[str] = mapped_column(String(64), default="unknown", index=True)
+    captured_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
 
 
 class KOLScore(Base):

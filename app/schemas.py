@@ -11,6 +11,7 @@ class MentionCreate(BaseModel):
     engagement_rate: float = 0.0
     constituency: str = "default"
     content: str = Field(min_length=1)
+    origin_ip: str = ""
     posted_at: datetime | None = None
 
 
@@ -22,6 +23,7 @@ class MentionUpdate(BaseModel):
     engagement_rate: float | None = None
     constituency: str | None = None
     content: str | None = None
+    origin_ip: str | None = None
     posted_at: datetime | None = None
 
 
@@ -34,6 +36,7 @@ class MentionOut(BaseModel):
     engagement_rate: float
     constituency: str
     content: str
+    origin_ip: str = ""
     posted_at: datetime
     sentiment_score: float
     topic: str
