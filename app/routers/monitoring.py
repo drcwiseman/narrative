@@ -1,5 +1,6 @@
 import csv
 import io
+import re
 from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -15,6 +16,21 @@ from app.services.stream import event_stream
 
 
 router = APIRouter(prefix="/api/monitoring", tags=["monitoring"])
+
+_ASSISTANT_STOPWORDS = {
+    "why", "is", "the", "a", "an", "how", "what", "when", "where", "who", "are", "was", "were",
+    "trending", "about", "does", "do", "can", "could", "should", "tell", "me", "explain", "going",
+    "on", "with", "this", "that", "and", "for", "from", "into", "any", "there",
+}
+
+
+def _extract_search_terms(query: str) -> list[str]:
+    words = re.findall(r"[a-zA-Z0-9']+", query.lower())
+    terms = [word for word in words if word not in _ASSISTANT_STOPWORDS and len(word) > 2]
+    if terms:
+        return terms[:5]
+    compact = query.strip()
+    return [compact] if compact else []
 
 
 @router.get("/mentions")
@@ -472,18 +488,49 @@ def narrative_map(
     current_user: User = Depends(require_roles("admin", "coordinator", "analyst", "outreach")),
 ):
     rows = db.query(Narrative).order_by(desc(Narrative.last_seen)).limit(50).all()
+    if rows:
+        return [
+            {
+                "id": row.id,
+                "label": row.name,
+                "topic": row.topic,
+                "constituency": row.constituency,
+                "volume": row.mention_count,
+                "risk_score": row.risk_score,
+                "status": row.status,
+                "last_seen": row.last_seen.isoformat(),
+                "source": "narrative_lifecycle",
+            }
+            for row in rows
+        ]
+
+    agg = (
+        db.query(
+            Analysis.topic,
+            Mention.constituency,
+            func.count(Mention.id).label("volume"),
+            func.avg(Analysis.harmful_claim_score).label("risk_score"),
+            func.max(Mention.posted_at).label("last_seen"),
+        )
+        .join(Analysis, Analysis.mention_id == Mention.id)
+        .group_by(Analysis.topic, Mention.constituency)
+        .order_by(desc("volume"))
+        .limit(25)
+        .all()
+    )
     return [
         {
-            "id": row.id,
-            "label": row.name,
-            "topic": row.topic,
-            "constituency": row.constituency,
-            "volume": row.mention_count,
-            "risk_score": row.risk_score,
-            "status": row.status,
-            "last_seen": row.last_seen.isoformat(),
+            "id": idx,
+            "label": f"{topic.title()} Narrative - {constituency.title()}",
+            "topic": topic,
+            "constituency": constituency,
+            "volume": int(volume),
+            "risk_score": round(float(risk_score or 0), 3),
+            "status": "emerging" if volume < 10 else "early_influencers" if volume < 50 else "mass_adoption",
+            "last_seen": last_seen.isoformat() if last_seen else datetime.utcnow().isoformat(),
+            "source": "topic_aggregate",
         }
-        for row in rows
+        for idx, (topic, constituency, volume, risk_score, last_seen) in enumerate(agg, start=1)
     ]
 
 
@@ -529,18 +576,54 @@ def influence_network(
         query = query.filter(Mention.constituency == constituency)
     rows = query.order_by(desc(Mention.posted_at)).limit(300).all()
     node_weights: dict[str, float] = {}
+    node_meta: dict[str, dict[str, str | int | float]] = {}
+    topic_authors: dict[str, list[str]] = {}
     for mention, analysis in rows:
-        node_weights[mention.author_handle] = node_weights.get(mention.author_handle, 0.0) + (
-            1.0 + float(analysis.harmful_claim_score)
-        )
+        weight_delta = 1.0 + float(analysis.harmful_claim_score)
+        node_weights[mention.author_handle] = node_weights.get(mention.author_handle, 0.0) + weight_delta
+        node_meta[mention.author_handle] = {
+            "platform": mention.platform,
+            "followers": mention.followers,
+            "topic": analysis.topic,
+        }
+        topic_authors.setdefault(analysis.topic, [])
+        if mention.author_handle not in topic_authors[analysis.topic]:
+            topic_authors[analysis.topic].append(mention.author_handle)
+
     top_nodes = sorted(node_weights.items(), key=lambda x: x[1], reverse=True)[:20]
-    handles = [h for h, _ in top_nodes]
+    top_handle_set = {handle for handle, _ in top_nodes}
     edges = []
-    for i in range(len(handles) - 1):
-        edges.append({"source": handles[i], "target": handles[i + 1], "weight": round(top_nodes[i][1], 3)})
+    seen_pairs: set[tuple[str, str]] = set()
+    for topic_name, authors in topic_authors.items():
+        scoped = [author for author in authors if author in top_handle_set]
+        for i in range(len(scoped)):
+            for j in range(i + 1, min(i + 3, len(scoped))):
+                source, target = scoped[i], scoped[j]
+                pair = tuple(sorted((source, target)))
+                if pair in seen_pairs:
+                    continue
+                seen_pairs.add(pair)
+                edges.append(
+                    {
+                        "source": source,
+                        "target": target,
+                        "weight": round(min(node_weights[source], node_weights[target]), 3),
+                        "topic": topic_name,
+                    }
+                )
+
     return {
-        "nodes": [{"id": handle, "weight": round(weight, 3)} for handle, weight in top_nodes],
-        "edges": edges,
+        "nodes": [
+            {
+                "id": handle,
+                "weight": round(weight, 3),
+                "platform": node_meta.get(handle, {}).get("platform", ""),
+                "followers": node_meta.get(handle, {}).get("followers", 0),
+                "topic": node_meta.get(handle, {}).get("topic", ""),
+            }
+            for handle, weight in top_nodes
+        ],
+        "edges": edges[:30],
     }
 
 
@@ -606,33 +689,53 @@ def assistant_query(
     query = q.strip()
     if not query:
         raise HTTPException(status_code=400, detail="Query cannot be empty")
-    rows = (
-        db.query(Mention, Analysis)
-        .join(Analysis, Analysis.mention_id == Mention.id)
-        .filter(Mention.content.ilike(f"%{query}%"))
-        .order_by(desc(Mention.posted_at))
-        .limit(120)
-        .all()
-    )
+
+    terms = _extract_search_terms(query)
+    db_query = db.query(Mention, Analysis).join(Analysis, Analysis.mention_id == Mention.id)
+    for term in terms:
+        db_query = db_query.filter(Mention.content.ilike(f"%{term}%"))
+    rows = db_query.order_by(desc(Mention.posted_at)).limit(120).all()
+
+    if not rows and len(terms) > 1:
+        db_query = db.query(Mention, Analysis).join(Analysis, Analysis.mention_id == Mention.id)
+        db_query = db_query.filter(Mention.content.ilike(f"%{terms[0]}%"))
+        rows = db_query.order_by(desc(Mention.posted_at)).limit(120).all()
+
     if not rows:
         return {
-            "answer": f"No active signal found for '{query}'. Run Google Source Scan and widen the time window.",
-            "insights": [],
+            "answer": (
+                f"No active signal found for '{query}' (searched: {', '.join(terms)}). "
+                "Ingest mentions, run Google Source Scan, or try a shorter keyword like 'fuel' or 'election'."
+            ),
+            "insights": [{"metric": "search_terms", "value": ", ".join(terms)}],
         }
 
     platform_counts: dict[str, int] = {}
+    topic_counts: dict[str, int] = {}
     harmful_count = 0
     for mention, analysis in rows:
         platform_counts[mention.platform] = platform_counts.get(mention.platform, 0) + 1
+        topic_counts[analysis.topic] = topic_counts.get(analysis.topic, 0) + 1
         if analysis.is_harmful:
             harmful_count += 1
     top_platform = max(platform_counts.items(), key=lambda x: x[1])[0]
+    top_topic = max(topic_counts.items(), key=lambda x: x[1])[0]
     harmful_ratio = harmful_count / max(len(rows), 1)
     first = rows[-1][0]
+    latest = rows[0][0]
+    top_kol = (
+        db.query(KOLScore)
+        .filter(KOLScore.constituency == latest.constituency)
+        .order_by(desc(KOLScore.influence_score))
+        .first()
+    )
+    kol_hint = f" Engage {top_kol.handle} ({top_kol.tier}) for outreach." if top_kol else ""
     answer = (
-        f"The '{query}' narrative started from {first.author_handle} on {first.platform} at {first.posted_at.isoformat()}. "
-        f"Primary spread channel is {top_platform}. Harmful ratio is {round(harmful_ratio, 3)}. "
-        "Recommended: publish clarification, activate KOL outreach, and monitor spread-analysis every 30 minutes."
+        f"Signal for '{', '.join(terms)}' spans {len(rows)} mentions. "
+        f"Earliest mention: {first.author_handle} on {first.platform} at {first.posted_at.isoformat()}. "
+        f"Latest activity: {latest.author_handle} on {latest.platform}. "
+        f"Dominant topic is {top_topic}; primary channel is {top_platform}; harmful ratio is {round(harmful_ratio, 3)}."
+        f"{kol_hint} Recommended: run Spread Analysis, publish clarification, and monitor every 30 minutes."
     )
     return {
         "answer": answer,
@@ -640,5 +743,7 @@ def assistant_query(
             {"metric": "mentions", "value": len(rows)},
             {"metric": "harmful_ratio", "value": round(harmful_ratio, 3)},
             {"metric": "top_platform", "value": top_platform},
+            {"metric": "top_topic", "value": top_topic},
+            {"metric": "search_terms", "value": ", ".join(terms)},
         ],
     }

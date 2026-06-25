@@ -42,7 +42,7 @@ def get_kol_leaderboard(
 def bulk_rescore(
     constituency: str,
     db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("admin", "coordinator")),
+    current_user: User = Depends(require_roles("admin", "coordinator", "analyst")),
 ):
     count = rescore_constituency(db, constituency=constituency)
     return {"ok": True, "rescored": count, "constituency": constituency}

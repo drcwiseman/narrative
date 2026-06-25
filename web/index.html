@@ -372,42 +372,112 @@
         <div id="alerts"></div>
       </section>
       <section class="card page-card" data-page="intelligence">
-        <h2>KOL Leaderboard</h2>
-        <div class="toolbar">
-          <button id="refreshKols">Refresh KOLs</button>
+        <div class="card-head">
+          <div>
+            <h2>Intelligence Guide</h2>
+            <p class="card-desc">Use these modules to understand who is driving narratives and which stories need priority action.</p>
+          </div>
+          <button id="refreshIntelligencePage" type="button" class="btn-secondary">Refresh All</button>
+        </div>
+        <div class="intel-guide">
+          <div class="item"><b>KOL Leaderboard</b><small>Ranked influencers by reach, engagement, and narrative impact.</small></div>
+          <div class="item"><b>Narrative Map</b><small>Grouped storylines by topic and constituency with risk/volume.</small></div>
+          <div class="item"><b>Coordination Signals</b><small>Repeated identical content that may indicate coordinated campaigns.</small></div>
+          <div class="item"><b>Influence Network</b><small>Authors amplifying the same topics (relationship graph).</small></div>
+          <div class="item"><b>Spread Analysis</b><small>When/where a keyword first spread and mitigation suggestions.</small></div>
+          <div class="item"><b>AI Assistant</b><small>Natural-language briefing from live mention data.</small></div>
+        </div>
+      </section>
+
+      <section class="card page-card" data-page="intelligence">
+        <div class="card-head">
+          <div>
+            <h2>KOL Leaderboard</h2>
+            <p class="card-desc">Top voices shaping conversation. Use for outreach targeting and response amplification.</p>
+          </div>
+          <button id="refreshKols" type="button" class="btn-secondary">Refresh</button>
         </div>
         <div id="kols"></div>
       </section>
 
       <section class="card page-card" data-page="intelligence">
-        <h2>Narrative Intelligence</h2>
-        <div class="toolbar">
-          <button id="loadNarrativeMap">Narrative Map</button>
-          <button id="loadCoordinatedSignals">Coordination Signals</button>
-          <button id="loadInfluenceNetwork">Influence Network</button>
+        <div class="card-head">
+          <div>
+            <h2>Narrative Map</h2>
+            <p class="card-desc">Active narratives ranked by volume and risk score.</p>
+          </div>
+          <button id="loadNarrativeMap" type="button" class="btn-secondary">Load Map</button>
         </div>
-        <div id="narrativeIntelResult"></div>
+        <div id="narrativeMapResult"></div>
       </section>
 
       <section class="card page-card" data-page="intelligence">
-        <h2>KOL Rescore</h2>
-        <form id="rescoreForm">
-          <input name="constituency" placeholder="Constituency" value="central" required />
+        <div class="card-head">
+          <div>
+            <h2>Coordination Signals</h2>
+            <p class="card-desc">Detect repeated content patterns that may indicate bot/coordinated behavior.</p>
+          </div>
+          <button id="loadCoordinatedSignals" type="button" class="btn-secondary">Scan Signals</button>
+        </div>
+        <div id="coordinationResult"></div>
+      </section>
+
+      <section class="card page-card" data-page="intelligence">
+        <div class="card-head">
+          <div>
+            <h2>Influence Network</h2>
+            <p class="card-desc">Topic-linked author relationships among high-impact accounts.</p>
+          </div>
+          <button id="loadInfluenceNetwork" type="button" class="btn-secondary">Build Network</button>
+        </div>
+        <div id="influenceNetworkResult"></div>
+      </section>
+
+      <section class="card page-card" data-page="intelligence">
+        <div class="card-head">
+          <div>
+            <h2>KOL Rescore</h2>
+            <p class="card-desc">Recalculate influence scores after new mention volume is ingested.</p>
+          </div>
+        </div>
+        <form id="rescoreForm" class="form-grid form-narrow">
+          <div><label>Constituency</label><input name="constituency" placeholder="Constituency" value="central" required /></div>
           <button type="submit">Rescore Constituency</button>
         </form>
         <small id="rescoreResult"></small>
       </section>
 
       <section class="card page-card" data-page="intelligence">
-        <h2>Spread Analysis</h2>
-        <form id="spreadAnalysisForm">
-          <input name="keyword" placeholder="Keyword to track spread (required)" required />
-          <input name="topic" placeholder="Optional topic filter (elections, security...)" />
-          <input name="constituency" placeholder="Optional constituency filter" />
-          <input name="hours" type="number" min="1" max="720" value="168" />
+        <div class="card-head">
+          <div>
+            <h2>Spread Analysis</h2>
+            <p class="card-desc">Track first appearance, platform spread, and recommended mitigation steps.</p>
+          </div>
+        </div>
+        <form id="spreadAnalysisForm" class="form-grid form-narrow">
+          <div><label>Keyword</label><input name="keyword" placeholder="e.g. fuel shortage" required /></div>
+          <div class="form-row-2">
+            <div><label>Topic filter (optional)</label><input name="topic" placeholder="elections, security..." /></div>
+            <div><label>Constituency (optional)</label><input name="constituency" placeholder="central" /></div>
+          </div>
+          <div><label>Time window (hours)</label><input name="hours" type="number" min="1" max="720" value="168" /></div>
           <button type="submit">Analyze Spread</button>
         </form>
         <div id="spreadAnalysisResult"></div>
+      </section>
+
+      <section class="card page-card" data-page="intelligence">
+        <div class="card-head">
+          <div>
+            <h2>AI Assistant</h2>
+            <p class="card-desc">Ask natural-language questions; the assistant searches live mentions and summarizes risk.</p>
+          </div>
+        </div>
+        <form id="assistantQueryForm" class="form-grid form-narrow">
+          <div><label>Your question</label><input name="q" placeholder="Why is fuel shortage trending?" required /></div>
+          <button type="submit">Ask Assistant</button>
+        </form>
+        <div id="assistantResult"></div>
       </section>
 
       <section class="card page-card" data-page="response">
@@ -429,15 +499,6 @@
           <button type="submit">Measure Counter-Messaging Performance</button>
         </form>
         <div id="campaignImpactResult"></div>
-      </section>
-
-      <section class="card page-card" data-page="intelligence">
-        <h2>AI Assistant</h2>
-        <form id="assistantQueryForm">
-          <input name="q" placeholder="Ask: why is fuel shortage trending?" required />
-          <button type="submit">Ask Assistant</button>
-        </form>
-        <div id="assistantResult"></div>
       </section>
 
       <section class="card page-card" data-page="reports">
@@ -463,7 +524,9 @@
       const mentionsEl = document.getElementById("mentions");
       const alertsEl = document.getElementById("alerts");
       const kolsEl = document.getElementById("kols");
-      const narrativeIntelResultEl = document.getElementById("narrativeIntelResult");
+      const narrativeMapResultEl = document.getElementById("narrativeMapResult");
+      const coordinationResultEl = document.getElementById("coordinationResult");
+      const influenceNetworkResultEl = document.getElementById("influenceNetworkResult");
       const campaignsListEl = document.getElementById("campaignsList");
       const outreachListEl = document.getElementById("outreachList");
       const scanSectionEl = document.getElementById("scanSection");
@@ -533,6 +596,18 @@
           card.classList.toggle("hidden", !shouldShow);
         }
         if (window.NarrativeTheme) window.NarrativeTheme.updatePageHero(activePage);
+        if (activePage === "intelligence") {
+          loadIntelligencePage().catch(console.error);
+        }
+      }
+
+      async function loadIntelligencePage() {
+        await Promise.all([
+          loadKols(),
+          loadNarrativeMap(),
+          loadCoordinatedSignals(),
+          loadInfluenceNetwork(),
+        ]);
       }
 
       function setRoleSectionVisibility(sectionEl, isVisible) {
@@ -619,15 +694,37 @@
         `).join("");
       }
 
+      function tierClass(tier) {
+        if (tier === "mega") return "pill connected";
+        if (tier === "macro") return "pill";
+        return "pill";
+      }
+
       async function loadKols() {
         const res = await api("/api/kols/leaderboard");
         const data = await res.json();
-        kolsEl.innerHTML = data.map((row) => `
-          <div class="item">
-            <b>${esc(row.handle)}</b><span class="pill">${esc(row.tier)}</span>
-            <div>${esc(row.constituency)} | score=${row.influence_score} | followers=${row.followers}</div>
+        if (!data.length) {
+          kolsEl.innerHTML = '<div class="empty-state">No KOL data yet. Ingest mentions to populate influencer scores.</div>';
+          return;
+        }
+        kolsEl.innerHTML = `
+          <div class="data-table">
+            <div class="data-row data-head">
+              <span>Rank</span><span>Handle</span><span>Tier</span><span>Score</span><span>Followers</span><span>Mentions</span>
+            </div>
+            ${data.map((row, idx) => `
+              <div class="data-row">
+                <span>#${idx + 1}</span>
+                <span><b>${esc(row.handle)}</b><br><small>${esc(row.name || "")}</small></span>
+                <span><span class="${tierClass(row.tier)}">${esc(row.tier)}</span></span>
+                <span>${Number(row.influence_score).toFixed(2)}</span>
+                <span>${row.followers}</span>
+                <span>${row.mention_count}</span>
+              </div>
+            `).join("")}
           </div>
-        `).join("");
+          <small>Constituency filter: all · sorted by influence score</small>
+        `;
       }
 
       async function loadCampaigns() {
@@ -804,27 +901,40 @@
       async function loadNarrativeMap() {
         const res = await api("/api/monitoring/narrative-map");
         const rows = await res.json();
-        narrativeIntelResultEl.innerHTML = rows.length ? rows.slice(0, 12).map((row) => `
-          <div class="item">
-            <b>${esc(row.label)}</b>
-            <span class="pill">volume=${row.volume}</span>
-            <span class="pill ${row.risk_score >= 0.6 ? "harmful" : ""}">risk=${row.risk_score}</span>
-            <div><small>topic=${esc(row.topic)} constituency=${esc(row.constituency)} status=${esc(row.status)}</small></div>
+        if (!rows.length) {
+          narrativeMapResultEl.innerHTML = '<div class="empty-state">No narratives detected yet. Ingest mentions to build narrative map data.</div>';
+          return;
+        }
+        narrativeMapResultEl.innerHTML = rows.slice(0, 12).map((row) => `
+          <div class="feed-item">
+            <div class="feed-meta">
+              <b>${esc(row.label)}</b>
+              <span class="pill">volume ${row.volume}</span>
+              <span class="pill ${row.risk_score >= 0.6 ? "harmful" : ""}">risk ${row.risk_score}</span>
+              <span class="pill">${esc(row.status)}</span>
+            </div>
+            <small>topic=${esc(row.topic)} · constituency=${esc(row.constituency)} · last seen ${esc(row.last_seen)} · source=${esc(row.source || "narrative")}</small>
           </div>
-        `).join("") : "<small>No narrative map data yet.</small>";
+        `).join("");
       }
 
       async function loadCoordinatedSignals() {
         const res = await api("/api/monitoring/coordinated-campaigns");
         const rows = await res.json();
-        narrativeIntelResultEl.innerHTML = rows.length ? rows.map((row) => `
-          <div class="item">
-            <b>${esc(row.platform)}</b>
-            <span class="pill ${row.risk === "high" ? "harmful" : ""}">${esc(row.risk)}</span>
-            <div><small>repeat_count=${row.repeat_count}</small></div>
-            <div>${esc(row.signature)}</div>
+        if (!rows.length) {
+          coordinationResultEl.innerHTML = '<div class="empty-state">No coordination signals in the last 24 hours (requires 3+ identical posts on a platform).</div>';
+          return;
+        }
+        coordinationResultEl.innerHTML = rows.map((row) => `
+          <div class="feed-item">
+            <div class="feed-meta">
+              <b>${esc(row.platform)}</b>
+              <span class="pill ${row.risk === "high" ? "harmful" : ""}">${esc(row.risk)} risk</span>
+              <span class="pill">repeats ${row.repeat_count}</span>
+            </div>
+            <div class="feed-body">${esc(row.signature)}</div>
           </div>
-        `).join("") : "<small>No coordinated campaign signals detected.</small>";
+        `).join("");
       }
 
       async function loadInfluenceNetwork() {
@@ -832,9 +942,30 @@
         const data = await res.json();
         const nodes = data.nodes || [];
         const edges = data.edges || [];
-        narrativeIntelResultEl.innerHTML = `
-          <div class="item"><b>Top Nodes:</b> ${nodes.slice(0, 10).map((n) => `${esc(n.id)}(${n.weight})`).join(", ") || "none"}</div>
-          <div class="item"><b>Edges:</b> ${edges.slice(0, 10).map((e) => `${esc(e.source)}→${esc(e.target)}`).join(", ") || "none"}</div>
+        if (!nodes.length) {
+          influenceNetworkResultEl.innerHTML = '<div class="empty-state">Not enough mention data to build an influence network yet.</div>';
+          return;
+        }
+        influenceNetworkResultEl.innerHTML = `
+          <div class="data-table">
+            <div class="data-row data-head data-network">
+              <span>Author</span><span>Weight</span><span>Platform</span><span>Topic</span>
+            </div>
+            ${nodes.slice(0, 10).map((n) => `
+              <div class="data-row data-network">
+                <span><b>${esc(n.id)}</b></span>
+                <span>${n.weight}</span>
+                <span>${esc(n.platform || "n/a")}</span>
+                <span>${esc(n.topic || "n/a")}</span>
+              </div>
+            `).join("")}
+          </div>
+          <div class="form-section">
+            <b>Topic-linked relationships</b>
+            ${edges.length ? edges.slice(0, 12).map((e) => `
+              <div class="item"><small>${esc(e.source)} → ${esc(e.target)} · topic=${esc(e.topic)} · weight=${e.weight}</small></div>
+            `).join("") : '<div class="empty-state">No shared-topic links detected among top nodes.</div>'}
+          </div>
         `;
       }
 
@@ -1066,6 +1197,10 @@
         }
       });
 
+      document.getElementById("refreshIntelligencePage").addEventListener("click", () => {
+        loadIntelligencePage().catch((err) => alert(err.message));
+      });
+
       refreshKolsButton.addEventListener("click", () => {
         loadKols().catch((err) => alert(err.message));
       });
@@ -1199,8 +1334,10 @@
           const res = await api(`/api/monitoring/assistant/query?q=${encodeURIComponent(query)}`);
           const data = await res.json();
           assistantResultEl.innerHTML = `
-            <div class="item">${esc(data.answer || "")}</div>
-            <div class="item"><small>${(data.insights || []).map((i) => `${esc(i.metric)}=${esc(i.value)}`).join(" | ")}</small></div>
+            <div class="feed-item">
+              <div class="feed-body">${esc(data.answer || "")}</div>
+              <small>${(data.insights || []).map((i) => `${esc(i.metric)}: ${esc(i.value)}`).join(" · ")}</small>
+            </div>
           `;
         } catch (err) {
           alert(err.message);
