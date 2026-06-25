@@ -2,6 +2,7 @@ import base64
 import hashlib
 import hmac
 import random
+import time
 from datetime import datetime
 from typing import Any
 from urllib.parse import unquote
@@ -22,7 +23,7 @@ from app.security import verify_connector_token
 
 router = APIRouter(prefix="/api/connectors", tags=["connectors"])
 
-SUPPORTED_PLATFORMS = ["x", "facebook", "whatsapp", "instagram", "telegram", "tiktok"]
+SUPPORTED_PLATFORMS = ["x", "facebook", "whatsapp", "slack", "instagram", "telegram", "tiktok"]
 SCAN_TEMPLATES = [
     "Election update says results are fake news across districts.",
     "Community jobs program is improving local businesses and trust.",
@@ -60,6 +61,25 @@ def _verify_meta_signature(raw_body: bytes, signature_header: str | None, secret
     if not secret or not signature_header:
         return False
     expected = "sha256=" + _hmac_sha256_hex(secret, raw_body)
+    return hmac.compare_digest(signature_header, expected)
+
+
+def _verify_slack_signature(
+    raw_body: bytes,
+    signature_header: str | None,
+    timestamp_header: str | None,
+) -> bool:
+    if not settings.slack_signing_secret or not signature_header or not timestamp_header:
+        return False
+    try:
+        timestamp = int(timestamp_header)
+    except ValueError:
+        return False
+    # Slack recommends rejecting requests older than 5 minutes.
+    if abs(int(time.time()) - timestamp) > 300:
+        return False
+    signature_base = f"v0:{timestamp}:{raw_body.decode('utf-8')}"
+    expected = "v0=" + _hmac_sha256_hex(settings.slack_signing_secret, signature_base.encode("utf-8"))
     return hmac.compare_digest(signature_header, expected)
 
 
@@ -148,6 +168,32 @@ def _parse_whatsapp_mentions(payload: dict[str, Any]) -> list[dict[str, Any]]:
                         }
                     )
     return parsed
+
+
+def _parse_slack_mentions(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    event = payload.get("event")
+    if not isinstance(event, dict):
+        return []
+    if event.get("type") != "message":
+        return []
+    if event.get("subtype") == "bot_message":
+        return []
+    content = event.get("text", "")
+    if not content:
+        return []
+    user_id = event.get("user", "unknown")
+    return [
+        {
+            "platform": "slack",
+            "author_handle": f"@{user_id}",
+            "author_name": user_id,
+            "followers": 0,
+            "engagement_rate": 0.0,
+            "constituency": "default",
+            "content": content,
+            "posted_at": datetime.utcnow().isoformat(),
+        }
+    ]
 
 
 @router.post("/mentions")
@@ -339,5 +385,31 @@ async def ingest_whatsapp_webhook(request: Request, db: Session = Depends(get_db
         mentions = _parse_x_mentions(payload)  # fallback for manual test payloads
     if not mentions:
         raise HTTPException(status_code=400, detail="No mention content found in WhatsApp webhook payload")
+    job_ids = [enqueue_job(db, "mention_ingest", mention).id for mention in mentions]
+    return {"ok": True, "queued_jobs": len(job_ids), "queued_job_ids": job_ids}
+
+
+@router.post("/slack/events")
+async def ingest_slack_events(request: Request, db: Session = Depends(get_db)):
+    raw_body = await request.body()
+    headers = {k.lower(): v for k, v in request.headers.items()}
+    slack_signature = _resolve_header(headers, "x-slack-signature")
+    slack_timestamp = _resolve_header(headers, "x-slack-request-timestamp")
+    fallback_secret = _resolve_header(headers, "x-webhook-secret", "x-slack-webhook-secret")
+
+    signature_ok = _verify_slack_signature(raw_body, slack_signature, slack_timestamp)
+    if not signature_ok:
+        _verify_platform_secret(fallback_secret, settings.slack_signing_secret, "slack")
+
+    payload = await request.json()
+    if payload.get("type") == "url_verification":
+        token = payload.get("token", "")
+        if settings.slack_verification_token and token != settings.slack_verification_token:
+            raise HTTPException(status_code=403, detail="Slack verification token mismatch")
+        return {"challenge": payload.get("challenge", "")}
+
+    mentions = _parse_slack_mentions(payload)
+    if not mentions:
+        return {"ok": True, "queued_jobs": 0, "reason": "No ingestible Slack message event"}
     job_ids = [enqueue_job(db, "mention_ingest", mention).id for mention in mentions]
     return {"ok": True, "queued_jobs": len(job_ids), "queued_job_ids": job_ids}

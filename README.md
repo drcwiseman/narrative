@@ -85,6 +85,7 @@ Authorization: Bearer <token>
 - `POST /api/connectors/facebook/webhook` native Facebook webhook receiver
 - `GET /api/connectors/whatsapp/webhook` WhatsApp webhook verification endpoint
 - `POST /api/connectors/whatsapp/webhook` native WhatsApp webhook receiver
+- `POST /api/connectors/slack/events` Slack Events API receiver (url verification + signed events)
 - `POST /api/connectors/scan-all` scan all supported social platforms and ingest generated mentions
 - `GET /api/connectors/platforms` list supported social sources
 - `GET /api/monitoring/mentions` recent analyzed mentions
@@ -126,6 +127,7 @@ Authorization: Bearer <token>
 - Set `JWT_SECRET` in production.
 - Use `python scripts/db_migrate.py` to ensure schema before serving.
 - Configure platform secrets (`X_WEBHOOK_SECRET`, `FACEBOOK_WEBHOOK_SECRET`, `WHATSAPP_WEBHOOK_SECRET`) and verify tokens (`FACEBOOK_WEBHOOK_VERIFY_TOKEN`, `WHATSAPP_WEBHOOK_VERIFY_TOKEN`) for native webhook receivers.
+- Configure Slack (`SLACK_WEBHOOK_URL`, `SLACK_SIGNING_SECRET`, optional `SLACK_VERIFICATION_TOKEN`) for outbound alerts and signed inbound Slack events.
 - Configure `SLACK_WEBHOOK_URL` and `CRM_WEBHOOK_URL` to activate external outbound integrations.
 
 ## Product and UX docs

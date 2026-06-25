@@ -13,6 +13,8 @@ class Settings:
     rate_limit_per_minute: int = int(os.getenv("RATE_LIMIT_PER_MINUTE", "120"))
     alert_error_rate_threshold: float = float(os.getenv("ALERT_ERROR_RATE_THRESHOLD", "0.2"))
     slack_webhook_url: str = os.getenv("SLACK_WEBHOOK_URL", "")
+    slack_signing_secret: str = os.getenv("SLACK_SIGNING_SECRET", "")
+    slack_verification_token: str = os.getenv("SLACK_VERIFICATION_TOKEN", "")
     crm_webhook_url: str = os.getenv("CRM_WEBHOOK_URL", "")
     x_webhook_secret: str = os.getenv("X_WEBHOOK_SECRET", "")
     facebook_webhook_secret: str = os.getenv("FACEBOOK_WEBHOOK_SECRET", "")
