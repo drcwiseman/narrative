@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 from app.database import Base, engine
@@ -32,3 +32,8 @@ def home():
 @app.get("/health")
 def health():
     return {"ok": True}
+
+
+@app.get("/favicon.ico")
+def favicon():
+    return Response(status_code=204)

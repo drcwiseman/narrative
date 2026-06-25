@@ -67,14 +67,14 @@
       <section class="card">
         <h2>Authentication</h2>
         <form id="registerForm">
-          <input name="email" placeholder="Email" required />
+          <input name="email" type="email" placeholder="Email" autocomplete="email" required />
           <input name="full_name" placeholder="Full Name" />
-          <input name="password" type="password" placeholder="Password (min 8 chars)" required />
+          <input name="password" type="password" placeholder="Password (min 8 chars)" autocomplete="new-password" required />
           <button type="submit">Register</button>
         </form>
         <form id="loginForm">
-          <input name="email" placeholder="Email" required />
-          <input name="password" type="password" placeholder="Password" required />
+          <input name="email" type="email" placeholder="Email" autocomplete="username" required />
+          <input name="password" type="password" placeholder="Password" autocomplete="current-password" required />
           <button type="submit">Login</button>
         </form>
         <small id="authState">Not authenticated</small>
@@ -156,8 +156,10 @@
       const scanSectionEl = document.getElementById("scanSection");
       const scanResultEl = document.getElementById("scanResult");
       const connectorKeyResultEl = document.getElementById("connectorKeyResult");
+      const refreshKolsButton = document.getElementById("refreshKols");
       let token = localStorage.getItem("narrative_token") || "";
       let currentRole = "";
+      let stream = null;
 
       function esc(text) {
         return String(text)
@@ -176,14 +178,23 @@
           roleTextEl.textContent = `Current role: ${currentRole || "unknown"}`;
           adminControlsEl.classList.toggle("hidden", currentRole !== "admin");
           scanSectionEl.classList.toggle("hidden", !["admin", "coordinator", "analyst"].includes(currentRole));
+          refreshKolsButton.disabled = false;
           connectStream();
           refreshAll();
         } else {
+          if (stream) {
+            stream.close();
+            stream = null;
+          }
           localStorage.removeItem("narrative_token");
           authStateEl.textContent = "Not authenticated";
           rolePanelEl.classList.add("hidden");
           adminControlsEl.classList.add("hidden");
           scanSectionEl.classList.add("hidden");
+          refreshKolsButton.disabled = true;
+          mentionsEl.innerHTML = "";
+          alertsEl.innerHTML = "";
+          kolsEl.innerHTML = "";
         }
       }
 
@@ -193,7 +204,16 @@
         const res = await fetch(path, { ...options, headers });
         if (!res.ok) {
           let body = "";
-          try { body = JSON.stringify(await res.json()); } catch (_) {}
+          let detail = "";
+          try {
+            const payload = await res.json();
+            body = JSON.stringify(payload);
+            detail = payload.detail || "";
+          } catch (_) {}
+          if (res.status === 401) {
+            setToken("", "");
+            throw new Error(detail || "Session expired. Please login again.");
+          }
           throw new Error(`Request failed ${res.status}: ${body}`);
         }
         return res;
@@ -225,6 +245,7 @@
       }
 
       async function loadKols() {
+        if (!token) return;
         const res = await api("/api/kols/leaderboard");
         const data = await res.json();
         kolsEl.innerHTML = data.map(row => `
@@ -276,7 +297,14 @@
         alert("Campaign created");
       });
 
-      document.getElementById("refreshKols").addEventListener("click", loadKols);
+      refreshKolsButton.addEventListener("click", async () => {
+        try {
+          await loadKols();
+        } catch (err) {
+          console.error(err);
+          alert(err.message);
+        }
+      });
 
       document.getElementById("scanForm").addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -341,7 +369,6 @@
         e.target.reset();
       });
 
-      let stream = null;
       function connectStream() {
         if (!token) return;
         if (stream) stream.close();
