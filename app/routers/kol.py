@@ -3,7 +3,9 @@ from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.deps import require_roles
 from app.models import KOLScore
+from app.models import User
 from app.services.kol import rescore_constituency
 
 
@@ -11,7 +13,12 @@ router = APIRouter(prefix="/api/kols", tags=["kols"])
 
 
 @router.get("/leaderboard")
-def get_kol_leaderboard(constituency: str | None = None, limit: int = 50, db: Session = Depends(get_db)):
+def get_kol_leaderboard(
+    constituency: str | None = None,
+    limit: int = 50,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "coordinator", "analyst", "outreach")),
+):
     query = db.query(KOLScore)
     if constituency:
         query = query.filter(KOLScore.constituency == constituency)
@@ -32,6 +39,10 @@ def get_kol_leaderboard(constituency: str | None = None, limit: int = 50, db: Se
 
 
 @router.post("/rescore")
-def bulk_rescore(constituency: str, db: Session = Depends(get_db)):
+def bulk_rescore(
+    constituency: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "coordinator")),
+):
     count = rescore_constituency(db, constituency=constituency)
     return {"ok": True, "rescored": count, "constituency": constituency}

@@ -4,18 +4,20 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from app.database import get_db
-from app.models import Analysis, Mention
+from app.deps import require_roles
+from app.models import Analysis, Mention, User
 from app.schemas import MentionCreate
 from app.services.analyzer import extract_topic, harmful_claim_score, score_sentiment
+from app.services.audit import write_audit_log
 from app.services.kol import upsert_kol_from_mention
+from app.services.notifications import dispatch_harmful_alerts
 from app.services.stream import event_stream
 
 
 router = APIRouter(prefix="/api/mentions", tags=["mentions"])
 
 
-@router.post("")
-async def ingest_mention(payload: MentionCreate, db: Session = Depends(get_db)):
+async def ingest_mention_internal(payload: MentionCreate, db: Session, actor_email: str = "system"):
     mention = Mention(
         platform=payload.platform,
         author_handle=payload.author_handle,
@@ -58,5 +60,25 @@ async def ingest_mention(payload: MentionCreate, db: Session = Depends(get_db)):
         "is_harmful": analysis.is_harmful == 1,
         "kol_tier": kol.tier,
     }
+    notification_results = dispatch_harmful_alerts(db, event)
+    if notification_results:
+        event["notification_results"] = notification_results
     await event_stream.publish(event)
+    write_audit_log(
+        db,
+        actor=None,
+        action="mention.ingest",
+        resource_type="mention",
+        resource_id=str(mention.id),
+        metadata={"actor_email": actor_email, "platform": mention.platform, "is_harmful": bool(analysis.is_harmful)},
+    )
     return {"ok": True, "mention_id": mention.id, "analysis_id": analysis.id}
+
+
+@router.post("")
+async def ingest_mention(
+    payload: MentionCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "coordinator", "analyst")),
+):
+    return await ingest_mention_internal(payload, db, actor_email=current_user.email)

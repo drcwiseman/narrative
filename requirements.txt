@@ -4,3 +4,6 @@ sqlalchemy
 pydantic
 python-multipart
 requests
+PyJWT
+passlib
+email-validator

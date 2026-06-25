@@ -61,3 +61,48 @@ class OutreachCreate(BaseModel):
 class OutreachStatusUpdate(BaseModel):
     status: str
     notes: str = ""
+
+
+class RegisterRequest(BaseModel):
+    email: str
+    full_name: str = ""
+    password: str = Field(min_length=8)
+
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+
+class TokenResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    role: str
+
+
+class UserOut(BaseModel):
+    id: int
+    email: str
+    full_name: str
+    role: str
+    is_active: bool
+
+    class Config:
+        from_attributes = True
+
+
+class ConnectorKeyCreate(BaseModel):
+    name: str
+    platform: str
+
+
+class AlertEndpointCreate(BaseModel):
+    name: str
+    url: str
+    min_harmful_score: float = 0.8
+
+
+class ConnectorScanRequest(BaseModel):
+    constituency: str = "default"
+    platforms: list[str] = ["x", "facebook", "whatsapp", "instagram", "telegram", "tiktok"]
+    batch_size_per_platform: int = Field(default=2, ge=1, le=20)

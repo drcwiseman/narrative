@@ -75,3 +75,49 @@ class OutreachTask(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
     campaign: Mapped[Campaign] = relationship(back_populates="outreach_items")
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    full_name: Mapped[str] = mapped_column(String(255), default="")
+    password_hash: Mapped[str] = mapped_column(String(255))
+    role: Mapped[str] = mapped_column(String(32), default="analyst", index=True)
+    is_active: Mapped[int] = mapped_column(Integer, default=1, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ConnectorKey(Base):
+    __tablename__ = "connector_keys"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    token: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    platform: Mapped[str] = mapped_column(String(64), index=True)
+    is_active: Mapped[int] = mapped_column(Integer, default=1, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AlertEndpoint(Base):
+    __tablename__ = "alert_endpoints"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    url: Mapped[str] = mapped_column(String(512))
+    min_harmful_score: Mapped[float] = mapped_column(Float, default=0.8)
+    is_active: Mapped[int] = mapped_column(Integer, default=1, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    actor_email: Mapped[str] = mapped_column(String(255), index=True)
+    action: Mapped[str] = mapped_column(String(128), index=True)
+    resource_type: Mapped[str] = mapped_column(String(64), index=True)
+    resource_id: Mapped[str] = mapped_column(String(64), default="")
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

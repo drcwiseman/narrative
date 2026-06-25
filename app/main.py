@@ -5,13 +5,16 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.database import Base, engine
-from app.routers import campaigns, ingest, kol, monitoring
+from app.routers import admin, auth, campaigns, connectors, ingest, kol, monitoring
 
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Narrative Monitoring System", version="0.1.0")
+app.include_router(auth.router)
+app.include_router(admin.router)
 app.include_router(ingest.router)
+app.include_router(connectors.router)
 app.include_router(monitoring.router)
 app.include_router(kol.router)
 app.include_router(campaigns.router)
