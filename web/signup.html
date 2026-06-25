@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Narrative Signup</title>
+    <style>
+      :root { font-family: Arial, sans-serif; color-scheme: dark; }
+      body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: #111827; color: #e5e7eb; }
+      .card { width: min(420px, 92vw); background: #1f2937; border: 1px solid #374151; border-radius: 12px; padding: 1rem; }
+      h1 { margin: 0 0 0.75rem; }
+      input, button { width: 100%; margin: 0.25rem 0 0.5rem; background: #111827; color: #e5e7eb; border: 1px solid #4b5563; border-radius: 6px; padding: 0.5rem; }
+      button { cursor: pointer; background: #2563eb; border: 0; }
+      a { color: #93c5fd; }
+      small { color: #9ca3af; }
+    </style>
+  </head>
+  <body>
+    <section class="card">
+      <h1>Create Account</h1>
+      <form id="signupForm">
+        <input name="email" type="email" placeholder="Email" autocomplete="email" required />
+        <input name="full_name" placeholder="Full Name" autocomplete="name" />
+        <input name="password" type="password" placeholder="Password (min 8 chars)" autocomplete="new-password" required />
+        <button type="submit">Create Account</button>
+      </form>
+      <small>Already have an account? <a href="/login">Sign in</a></small>
+    </section>
+    <script>
+      if (localStorage.getItem("narrative_token")) {
+        window.location.replace("/");
+      }
+      document.getElementById("signupForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        const payload = Object.fromEntries(new FormData(e.target).entries());
+        const res = await fetch("/api/auth/register", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) return alert(data.detail || "Signup failed");
+        localStorage.setItem("narrative_token", data.access_token);
+        window.location.replace("/");
+      });
+    </script>
+  </body>
+</html>

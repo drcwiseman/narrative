@@ -3,105 +3,47 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Narrative Monitoring Dashboard</title>
+    <title>Narrative Dashboard</title>
     <style>
-      :root {
-        font-family: Arial, sans-serif;
-        color-scheme: dark;
-      }
-      body {
-        margin: 0;
-        padding: 1rem;
-        background: #111827;
-        color: #e5e7eb;
-      }
+      :root { font-family: Arial, sans-serif; color-scheme: dark; }
+      body { margin: 0; padding: 1rem; background: #111827; color: #e5e7eb; }
       h1, h2 { margin: 0 0 0.75rem; }
-      .grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-        gap: 1rem;
-      }
-      .card {
-        background: #1f2937;
-        border: 1px solid #374151;
-        border-radius: 10px;
-        padding: 1rem;
-      }
-      .item {
-        border-bottom: 1px solid #374151;
-        padding: 0.5rem 0;
-      }
+      .header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; margin-top: 1rem; }
+      .card { background: #1f2937; border: 1px solid #374151; border-radius: 10px; padding: 1rem; }
+      .item { border-bottom: 1px solid #374151; padding: 0.5rem 0; }
       .item:last-child { border-bottom: 0; }
-      .pill {
-        display: inline-block;
-        margin-left: 0.5rem;
-        padding: 0.12rem 0.45rem;
-        border-radius: 999px;
-        font-size: 0.8rem;
-        background: #374151;
-      }
+      .pill { display: inline-block; margin-left: 0.5rem; padding: 0.12rem 0.45rem; border-radius: 999px; font-size: 0.8rem; background: #374151; }
       .harmful { background: #7f1d1d; }
-      input, button, select, textarea {
-        width: 100%;
-        margin: 0.25rem 0 0.5rem;
-        background: #111827;
-        color: #e5e7eb;
-        border: 1px solid #4b5563;
-        border-radius: 6px;
-        padding: 0.45rem;
-      }
-      button {
-        cursor: pointer;
-        background: #2563eb;
-        border: 0;
-      }
+      input, button, textarea { width: 100%; margin: 0.25rem 0 0.5rem; background: #111827; color: #e5e7eb; border: 1px solid #4b5563; border-radius: 6px; padding: 0.45rem; }
+      button { cursor: pointer; background: #2563eb; border: 0; }
       small { color: #9ca3af; }
       .hidden { display: none; }
+      .row { display: flex; gap: 0.5rem; align-items: center; }
+      .row button { width: auto; margin: 0; }
     </style>
   </head>
   <body>
-    <h1>Narrative Monitoring Dashboard</h1>
-    <small>Real-time monitoring, KOL scoring, outreach coordination, and admin controls.</small>
-
-    <div class="grid" style="margin-top: 1rem;">
-      <section class="card">
-        <h2>Authentication</h2>
-        <form id="registerForm">
-          <input name="email" type="email" placeholder="Email" autocomplete="email" required />
-          <input name="full_name" placeholder="Full Name" />
-          <input name="password" type="password" placeholder="Password (min 8 chars)" autocomplete="new-password" required />
-          <button type="submit">Register</button>
-        </form>
-        <form id="loginForm">
-          <input name="email" type="email" placeholder="Email" autocomplete="username" required />
-          <input name="password" type="password" placeholder="Password" autocomplete="current-password" required />
-          <button type="submit">Login</button>
-        </form>
-        <small id="authState">Not authenticated</small>
-      </section>
-
-      <section class="card hidden" id="rolePanel">
-        <h2>Role Workspace</h2>
-        <small id="roleText"></small>
-        <div id="adminControls" class="hidden" style="margin-top: 0.75rem;">
-          <input id="connectorName" placeholder="Connector key name" />
-          <input id="connectorPlatform" placeholder="Connector platform (x, facebook, ...)" />
-          <button id="createConnectorKey">Create Connector Key</button>
-          <small id="connectorKeyResult"></small>
-        </div>
-      </section>
+    <div class="header">
+      <div>
+        <h1>Narrative Dashboard</h1>
+        <small id="identity">Loading session...</small>
+      </div>
+      <div class="row">
+        <button id="logoutBtn">Logout</button>
+      </div>
     </div>
 
-    <div class="grid" style="margin-top: 1rem;">
+    <div class="grid">
       <section class="card">
         <h2>Ingest Mention</h2>
         <form id="mentionForm">
           <input name="platform" placeholder="Platform (x, facebook, whatsapp)" required />
           <input name="author_handle" placeholder="@handle" required />
           <input name="author_name" placeholder="Author Name" />
-          <input name="followers" placeholder="Followers" type="number" value="0" />
-          <input name="engagement_rate" placeholder="Engagement Rate (0.0-1.0)" type="number" step="0.01" value="0.1" />
-          <input name="constituency" placeholder="Constituency" value="central" />
+          <input name="followers" type="number" value="0" />
+          <input name="engagement_rate" type="number" step="0.01" value="0.1" />
+          <input name="constituency" value="central" />
           <textarea name="content" placeholder="Mention text..." required></textarea>
           <button type="submit">Submit Mention</button>
         </form>
@@ -111,25 +53,33 @@
         <h2>Create Campaign</h2>
         <form id="campaignForm">
           <input name="name" placeholder="Campaign Name" required />
-          <input name="constituency" placeholder="Constituency" value="central" />
+          <input name="constituency" value="central" />
           <textarea name="message" placeholder="Counter-message..." required></textarea>
           <button type="submit">Create Campaign</button>
         </form>
       </section>
 
       <section class="card hidden" id="scanSection">
-        <h2>Scan Social Media (All Platforms)</h2>
+        <h2>Scan All Platforms</h2>
         <form id="scanForm">
-          <input name="constituency" placeholder="Constituency" value="central" />
+          <input name="constituency" value="central" />
           <input name="platforms" placeholder="x,facebook,whatsapp,instagram,telegram,tiktok" />
           <input name="batch_size_per_platform" type="number" min="1" max="20" value="2" />
           <button type="submit">Run Scan</button>
         </form>
         <small id="scanResult"></small>
       </section>
+
+      <section class="card hidden" id="adminControls">
+        <h2>Admin Controls</h2>
+        <input id="connectorName" placeholder="Connector key name" />
+        <input id="connectorPlatform" placeholder="Connector platform (x, facebook, ...)" />
+        <button id="createConnectorKey">Create Connector Key</button>
+        <small id="connectorKeyResult"></small>
+      </section>
     </div>
 
-    <div class="grid" style="margin-top: 1rem;">
+    <div class="grid">
       <section class="card">
         <h2>Live Mention Feed</h2>
         <div id="mentions"></div>
@@ -146,75 +96,45 @@
     </div>
 
     <script>
+      const token = localStorage.getItem("narrative_token") || "";
+      if (!token) window.location.replace("/login");
+
+      const identityEl = document.getElementById("identity");
       const mentionsEl = document.getElementById("mentions");
       const alertsEl = document.getElementById("alerts");
       const kolsEl = document.getElementById("kols");
-      const authStateEl = document.getElementById("authState");
-      const rolePanelEl = document.getElementById("rolePanel");
-      const roleTextEl = document.getElementById("roleText");
-      const adminControlsEl = document.getElementById("adminControls");
       const scanSectionEl = document.getElementById("scanSection");
       const scanResultEl = document.getElementById("scanResult");
+      const adminControlsEl = document.getElementById("adminControls");
       const connectorKeyResultEl = document.getElementById("connectorKeyResult");
       const refreshKolsButton = document.getElementById("refreshKols");
-      let token = localStorage.getItem("narrative_token") || "";
       let currentRole = "";
       let stream = null;
 
       function esc(text) {
-        return String(text)
-          .replaceAll("&", "&amp;")
-          .replaceAll("<", "&lt;")
-          .replaceAll(">", "&gt;");
+        return String(text).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
       }
 
-      function setToken(nextToken, role) {
-        token = nextToken;
-        currentRole = role || "";
-        if (token) {
-          localStorage.setItem("narrative_token", token);
-          authStateEl.textContent = `Authenticated (${currentRole || "unknown role"})`;
-          rolePanelEl.classList.remove("hidden");
-          roleTextEl.textContent = `Current role: ${currentRole || "unknown"}`;
-          adminControlsEl.classList.toggle("hidden", currentRole !== "admin");
-          scanSectionEl.classList.toggle("hidden", !["admin", "coordinator", "analyst"].includes(currentRole));
-          refreshKolsButton.disabled = false;
-          connectStream();
-          refreshAll();
-        } else {
-          if (stream) {
-            stream.close();
-            stream = null;
-          }
-          localStorage.removeItem("narrative_token");
-          authStateEl.textContent = "Not authenticated";
-          rolePanelEl.classList.add("hidden");
-          adminControlsEl.classList.add("hidden");
-          scanSectionEl.classList.add("hidden");
-          refreshKolsButton.disabled = true;
-          mentionsEl.innerHTML = "";
-          alertsEl.innerHTML = "";
-          kolsEl.innerHTML = "";
-        }
+      function clearSessionAndRedirect() {
+        if (stream) stream.close();
+        localStorage.removeItem("narrative_token");
+        window.location.replace("/login");
       }
 
       async function api(path, options = {}) {
-        const headers = Object.assign({}, options.headers || {});
-        if (token) headers["Authorization"] = `Bearer ${token}`;
+        const headers = Object.assign({}, options.headers || {}, { Authorization: `Bearer ${token}` });
         const res = await fetch(path, { ...options, headers });
         if (!res.ok) {
-          let body = "";
-          let detail = "";
+          let detail = `Request failed ${res.status}`;
           try {
             const payload = await res.json();
-            body = JSON.stringify(payload);
-            detail = payload.detail || "";
+            if (payload.detail) detail = payload.detail;
           } catch (_) {}
           if (res.status === 401) {
-            setToken("", "");
-            throw new Error(detail || "Session expired. Please login again.");
+            clearSessionAndRedirect();
+            throw new Error("Session expired");
           }
-          throw new Error(`Request failed ${res.status}: ${body}`);
+          throw new Error(detail);
         }
         return res;
       }
@@ -222,7 +142,7 @@
       async function loadMentions() {
         const res = await api("/api/monitoring/mentions");
         const data = await res.json();
-        mentionsEl.innerHTML = data.map(row => `
+        mentionsEl.innerHTML = data.map((row) => `
           <div class="item">
             <b>${esc(row.author_handle)}</b> on ${esc(row.platform)}
             ${row.is_harmful ? '<span class="pill harmful">harmful</span>' : ""}
@@ -235,7 +155,7 @@
       async function loadAlerts() {
         const res = await api("/api/monitoring/alerts");
         const data = await res.json();
-        alertsEl.innerHTML = data.map(row => `
+        alertsEl.innerHTML = data.map((row) => `
           <div class="item">
             <b>${esc(row.author_handle)}</b> ${esc(row.platform)}
             <span class="pill harmful">harmful=${row.harmful_claim_score}</span>
@@ -245,137 +165,26 @@
       }
 
       async function loadKols() {
-        if (!token) return;
         const res = await api("/api/kols/leaderboard");
         const data = await res.json();
-        kolsEl.innerHTML = data.map(row => `
+        kolsEl.innerHTML = data.map((row) => `
           <div class="item">
-            <b>${esc(row.handle)}</b>
-            <span class="pill">${esc(row.tier)}</span>
+            <b>${esc(row.handle)}</b><span class="pill">${esc(row.tier)}</span>
             <div>${esc(row.constituency)} | score=${row.influence_score} | followers=${row.followers}</div>
           </div>
         `).join("");
       }
 
       async function refreshAll() {
-        if (!token) return;
-        try {
-          await Promise.all([loadMentions(), loadAlerts(), loadKols()]);
-        } catch (err) {
-          console.error(err);
-          alert(err.message);
-        }
+        await Promise.all([loadMentions(), loadAlerts(), loadKols()]);
       }
 
-      document.getElementById("mentionForm").addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const form = new FormData(e.target);
-        const payload = Object.fromEntries(form.entries());
-        payload.followers = Number(payload.followers || 0);
-        payload.engagement_rate = Number(payload.engagement_rate || 0);
-        await api("/api/mentions", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        e.target.reset();
-        loadMentions();
-        loadAlerts();
-        loadKols();
-      });
-
-      document.getElementById("campaignForm").addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const form = new FormData(e.target);
-        const payload = Object.fromEntries(form.entries());
-        await api("/api/campaigns", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        e.target.reset();
-        alert("Campaign created");
-      });
-
-      refreshKolsButton.addEventListener("click", async () => {
-        try {
-          await loadKols();
-        } catch (err) {
-          console.error(err);
-          alert(err.message);
-        }
-      });
-
-      document.getElementById("scanForm").addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const form = new FormData(e.target);
-        const payload = Object.fromEntries(form.entries());
-        payload.batch_size_per_platform = Number(payload.batch_size_per_platform || 2);
-        payload.platforms = String(payload.platforms || "")
-          .split(",")
-          .map((x) => x.trim())
-          .filter(Boolean);
-        if (!payload.platforms.length) {
-          payload.platforms = ["x", "facebook", "whatsapp", "instagram", "telegram", "tiktok"];
-        }
-        const res = await api("/api/connectors/scan-all", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-        scanResultEl.textContent = `Scanned ${data.scanned_platforms.join(", ")} and created ${data.mentions_created} mentions`;
-        refreshAll();
-      });
-
-      document.getElementById("createConnectorKey").addEventListener("click", async () => {
-        const name = document.getElementById("connectorName").value.trim();
-        const platform = document.getElementById("connectorPlatform").value.trim();
-        if (!name || !platform) return alert("Connector name and platform are required");
-        const res = await api("/api/admin/connector-keys", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, platform }),
-        });
-        const data = await res.json();
-        connectorKeyResultEl.textContent = `Key created: ${data.name} token=${data.token}`;
-      });
-
-      document.getElementById("registerForm").addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const payload = Object.fromEntries(new FormData(e.target).entries());
-        const res = await fetch("/api/auth/register", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-        if (!res.ok) return alert(data.detail || "Register failed");
-        setToken(data.access_token, data.role);
-        e.target.reset();
-      });
-
-      document.getElementById("loginForm").addEventListener("submit", async (e) => {
-        e.preventDefault();
-        const payload = Object.fromEntries(new FormData(e.target).entries());
-        const res = await fetch("/api/auth/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(payload),
-        });
-        const data = await res.json();
-        if (!res.ok) return alert(data.detail || "Login failed");
-        setToken(data.access_token, data.role);
-        e.target.reset();
-      });
-
       function connectStream() {
-        if (!token) return;
         if (stream) stream.close();
         stream = new EventSource(`/api/monitoring/stream?token=${encodeURIComponent(token)}`);
         stream.onmessage = (event) => {
           const data = JSON.parse(event.data);
-          if (data.type === "mention_ingested") refreshAll();
+          if (data.type === "mention_ingested") refreshAll().catch(console.error);
         };
         stream.onerror = () => {
           if (stream) stream.close();
@@ -383,12 +192,102 @@
         };
       }
 
-      if (token) {
-        api("/api/auth/me")
-          .then((res) => res.json())
-          .then((me) => setToken(token, me.role || "session"))
-          .catch(() => setToken("", ""));
+      document.getElementById("logoutBtn").addEventListener("click", clearSessionAndRedirect);
+
+      document.getElementById("mentionForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          const payload = Object.fromEntries(new FormData(e.target).entries());
+          payload.followers = Number(payload.followers || 0);
+          payload.engagement_rate = Number(payload.engagement_rate || 0);
+          await api("/api/mentions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          e.target.reset();
+          await refreshAll();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("campaignForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          const payload = Object.fromEntries(new FormData(e.target).entries());
+          await api("/api/campaigns", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          e.target.reset();
+          alert("Campaign created");
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      refreshKolsButton.addEventListener("click", () => {
+        loadKols().catch((err) => alert(err.message));
+      });
+
+      document.getElementById("scanForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          const payload = Object.fromEntries(new FormData(e.target).entries());
+          payload.batch_size_per_platform = Number(payload.batch_size_per_platform || 2);
+          payload.platforms = String(payload.platforms || "")
+            .split(",")
+            .map((x) => x.trim())
+            .filter(Boolean);
+          if (!payload.platforms.length) payload.platforms = ["x", "facebook", "whatsapp", "instagram", "telegram", "tiktok"];
+          const res = await api("/api/connectors/scan-all", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          scanResultEl.textContent = `Scanned ${data.scanned_platforms.join(", ")} and created ${data.mentions_created} mentions`;
+          await refreshAll();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("createConnectorKey").addEventListener("click", async () => {
+        try {
+          const name = document.getElementById("connectorName").value.trim();
+          const platform = document.getElementById("connectorPlatform").value.trim();
+          if (!name || !platform) return alert("Connector name and platform are required");
+          const res = await api("/api/admin/connector-keys", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, platform }),
+          });
+          const data = await res.json();
+          connectorKeyResultEl.textContent = `Key created: ${data.name} token=${data.token}`;
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      async function bootstrap() {
+        try {
+          const meRes = await api("/api/auth/me");
+          const me = await meRes.json();
+          currentRole = me.role || "";
+          identityEl.textContent = `Logged in as ${me.email} (${currentRole})`;
+          adminControlsEl.classList.toggle("hidden", currentRole !== "admin");
+          scanSectionEl.classList.toggle("hidden", !["admin", "coordinator", "analyst"].includes(currentRole));
+          await refreshAll();
+          connectStream();
+        } catch (err) {
+          clearSessionAndRedirect();
+        }
       }
+
+      bootstrap();
     </script>
   </body>
 </html>
