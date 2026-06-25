@@ -90,10 +90,12 @@ Authorization: Bearer <token>
 - `GET /api/connectors/whatsapp/webhook` WhatsApp webhook verification endpoint
 - `POST /api/connectors/whatsapp/webhook` native WhatsApp webhook receiver
 - `POST /api/connectors/slack/events` Slack Events API receiver (url verification + signed events)
+- `POST /api/connectors/google/search` Google source scan and ingest
 - `POST /api/connectors/scan-all` scan all supported social platforms and ingest generated mentions
 - `GET /api/connectors/platforms` list supported social sources
 - `GET /api/monitoring/mentions` recent analyzed mentions
 - `GET /api/monitoring/alerts` harmful mention alerts
+- `GET /api/monitoring/spread-analysis?keyword=<kw>&hours=<n>` first-spread timeline + mitigation suggestions
 - `GET /api/monitoring/stream?token=<jwt>` SSE live event stream
 - `GET /api/monitoring/alerts/export.csv` CSV export for harmful alerts
 - `GET /api/monitoring/trends` topic/platform trend aggregates
@@ -133,6 +135,7 @@ Authorization: Bearer <token>
 - Configure platform secrets (`X_WEBHOOK_SECRET`, `FACEBOOK_WEBHOOK_SECRET`, `WHATSAPP_WEBHOOK_SECRET`) and verify tokens (`FACEBOOK_WEBHOOK_VERIFY_TOKEN`, `WHATSAPP_WEBHOOK_VERIFY_TOKEN`) for native webhook receivers.
 - Configure Slack (`SLACK_WEBHOOK_URL`, `SLACK_SIGNING_SECRET`, optional `SLACK_VERIFICATION_TOKEN`) for outbound alerts and signed inbound Slack events.
 - Configure `SLACK_WEBHOOK_URL` and `CRM_WEBHOOK_URL` to activate external outbound integrations.
+- Configure `GOOGLE_CSE_API_KEY` and `GOOGLE_CSE_CX` to enable Google source scanning.
 - Set `APP_BASE_URL` so Slack alerts include one-click dashboard links.
 - Optional severity routing: set `SLACK_CRITICAL_WEBHOOK_URL` and tune `SLACK_ALERT_THRESHOLD` / `SLACK_CRITICAL_THRESHOLD`.
 

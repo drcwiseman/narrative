@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any
 from urllib.parse import unquote
 
+import requests
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
@@ -16,14 +17,14 @@ from app.deps import require_roles
 from app.models import ConnectorKey, IdempotencyRecord, IntegrationCredential
 from app.routers.ingest import ingest_mention_internal
 from app.services.queue import enqueue_job
-from app.schemas import ConnectorScanRequest, MentionCreate
+from app.schemas import ConnectorScanRequest, GoogleSourceScanRequest, MentionCreate
 from app.models import User
 from app.security import verify_connector_token
 
 
 router = APIRouter(prefix="/api/connectors", tags=["connectors"])
 
-SUPPORTED_PLATFORMS = ["x", "facebook", "whatsapp", "slack", "instagram", "telegram", "tiktok"]
+SUPPORTED_PLATFORMS = ["x", "facebook", "whatsapp", "google", "slack", "instagram", "telegram", "tiktok"]
 SCAN_TEMPLATES = [
     "Election update says results are fake news across districts.",
     "Community jobs program is improving local businesses and trust.",
@@ -316,6 +317,13 @@ def list_connected_accounts(
             "alerts_configured": bool(settings.slack_webhook_url),
         },
         {
+            "platform": "google",
+            "connected": bool(settings.google_cse_api_key) and bool(settings.google_cse_cx),
+            "mode": "search-api",
+            "active_connector_keys": platform_key_counts.get("google", 0),
+            "api_configured": bool(settings.google_cse_api_key) and bool(settings.google_cse_cx),
+        },
+        {
             "platform": "instagram",
             "connected": platform_key_counts.get("instagram", 0) > 0,
             "mode": "simulated/connector-key",
@@ -368,6 +376,64 @@ async def scan_all_social_platforms(
         "scanned_platforms": target_platforms,
         "mentions_created": len(created),
         "mention_ids": created,
+    }
+
+
+@router.post("/google/search")
+async def google_source_scan(
+    payload: GoogleSourceScanRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "coordinator", "analyst")),
+):
+    if not settings.google_cse_api_key or not settings.google_cse_cx:
+        raise HTTPException(
+            status_code=503,
+            detail="GOOGLE_CSE_API_KEY and GOOGLE_CSE_CX must be configured for Google source scan",
+        )
+
+    try:
+        response = requests.get(
+            "https://www.googleapis.com/customsearch/v1",
+            params={
+                "key": settings.google_cse_api_key,
+                "cx": settings.google_cse_cx,
+                "q": payload.query,
+                "num": payload.max_results,
+            },
+            timeout=10,
+        )
+        response.raise_for_status()
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Google search request failed: {exc}") from exc
+
+    items = response.json().get("items", [])
+    mention_ids: list[int] = []
+    for item in items:
+        title = str(item.get("title", "")).strip()
+        snippet = str(item.get("snippet", "")).strip()
+        link = str(item.get("link", "")).strip()
+        content = f"{title} - {snippet} ({link})".strip()
+        if not content:
+            continue
+        mention_payload = MentionCreate(
+            platform="google",
+            author_handle="@google_source",
+            author_name="Google Source",
+            followers=0,
+            engagement_rate=0.0,
+            constituency=payload.constituency,
+            content=content,
+            posted_at=datetime.utcnow(),
+        )
+        result = await ingest_mention_internal(mention_payload, db, actor_email=current_user.email)
+        mention_ids.append(result["mention_id"])
+
+    return {
+        "ok": True,
+        "query": payload.query,
+        "results_found": len(items),
+        "mentions_created": len(mention_ids),
+        "mention_ids": mention_ids,
     }
 
 
@@ -457,8 +523,10 @@ def verify_whatsapp_webhook(
     hub_mode: str = Query(default="", alias="hub.mode"),
     hub_verify_token: str = Query(default="", alias="hub.verify_token"),
     hub_challenge: str = Query(default="", alias="hub.challenge"),
+    db: Session = Depends(get_db),
 ):
-    expected_token = settings.whatsapp_webhook_verify_token or settings.whatsapp_webhook_secret
+    credential = _platform_credential(db, "whatsapp")
+    expected_token = credential["verify_token"] or credential["webhook_secret"]
     if not expected_token:
         raise HTTPException(status_code=503, detail="WHATSAPP_WEBHOOK_VERIFY_TOKEN not configured")
     if hub_mode != "subscribe" or hub_verify_token != expected_token:
@@ -468,14 +536,16 @@ def verify_whatsapp_webhook(
 
 @router.post("/whatsapp/webhook")
 async def ingest_whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
+    credential = _platform_credential(db, "whatsapp")
+    webhook_secret = credential["webhook_secret"]
     raw_body = await request.body()
     headers = {k.lower(): v for k, v in request.headers.items()}
     signature_header = _resolve_header(headers, "x-hub-signature-256")
     fallback_secret = _resolve_header(headers, "x-webhook-secret", "x-whatsapp-webhook-secret")
 
-    signature_ok = _verify_meta_signature(raw_body, signature_header, settings.whatsapp_webhook_secret)
+    signature_ok = _verify_meta_signature(raw_body, signature_header, webhook_secret)
     if not signature_ok:
-        _verify_platform_secret(fallback_secret, settings.whatsapp_webhook_secret, "whatsapp")
+        _verify_platform_secret(fallback_secret, webhook_secret, "whatsapp")
 
     payload = await request.json()
     mentions = _parse_whatsapp_mentions(payload)

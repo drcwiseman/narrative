@@ -67,7 +67,7 @@
         <h2>Scan All Platforms</h2>
         <form id="scanForm">
           <input name="constituency" value="central" />
-          <input name="platforms" placeholder="x,facebook,whatsapp,instagram,telegram,tiktok" />
+          <input name="platforms" placeholder="x,facebook,whatsapp,google,instagram,telegram,tiktok" />
           <input name="batch_size_per_platform" type="number" min="1" max="20" value="2" />
           <button type="submit">Run Scan</button>
         </form>
@@ -137,14 +137,15 @@
       </section>
 
       <section class="card hidden" id="platformConnectionsSection">
-        <h2>Platform Connections (X/Facebook)</h2>
+        <h2>Platform Connections (X/Facebook/WhatsApp)</h2>
         <form id="upsertIntegrationCredentialForm">
           <select name="platform" required>
             <option value="x">x</option>
             <option value="facebook">facebook</option>
+            <option value="whatsapp">whatsapp</option>
           </select>
           <input name="webhook_secret" placeholder="Webhook secret (required)" required />
-          <input name="verify_token" placeholder="Verify token (facebook required, x optional)" />
+          <input name="verify_token" placeholder="Verify token (facebook/whatsapp required, x optional)" />
           <select name="is_active" required>
             <option value="1">active</option>
             <option value="0">inactive</option>
@@ -155,6 +156,17 @@
           <button id="loadIntegrationCredentials">Load Platform Credentials</button>
         </div>
         <div id="integrationCredentialsList"></div>
+      </section>
+
+      <section class="card hidden" id="googleScanSection">
+        <h2>Google Source Scan</h2>
+        <form id="googleScanForm">
+          <input name="query" placeholder="Keyword or phrase to scan on Google" required />
+          <input name="constituency" value="central" />
+          <input name="max_results" type="number" min="1" max="10" value="5" />
+          <button type="submit">Run Google Scan</button>
+        </form>
+        <small id="googleScanResult"></small>
       </section>
 
       <section class="card hidden" id="alertEndpointsSection">
@@ -256,6 +268,18 @@
         </form>
         <small id="rescoreResult"></small>
       </section>
+
+      <section class="card">
+        <h2>Spread Analysis</h2>
+        <form id="spreadAnalysisForm">
+          <input name="keyword" placeholder="Keyword to track spread (required)" required />
+          <input name="topic" placeholder="Optional topic filter (elections, security...)" />
+          <input name="constituency" placeholder="Optional constituency filter" />
+          <input name="hours" type="number" min="1" max="720" value="168" />
+          <button type="submit">Analyze Spread</button>
+        </form>
+        <div id="spreadAnalysisResult"></div>
+      </section>
     </div>
 
     <script>
@@ -270,6 +294,8 @@
       const outreachListEl = document.getElementById("outreachList");
       const scanSectionEl = document.getElementById("scanSection");
       const scanResultEl = document.getElementById("scanResult");
+      const googleScanSectionEl = document.getElementById("googleScanSection");
+      const googleScanResultEl = document.getElementById("googleScanResult");
       const accountsListEl = document.getElementById("accountsList");
       const adminControlsEl = document.getElementById("adminControls");
       const connectorKeyResultEl = document.getElementById("connectorKeyResult");
@@ -292,6 +318,7 @@
       const refreshKolsButton = document.getElementById("refreshKols");
       const rescoreResultEl = document.getElementById("rescoreResult");
       const refreshAccountsButton = document.getElementById("refreshAccounts");
+      const spreadAnalysisResultEl = document.getElementById("spreadAnalysisResult");
       let currentRole = "";
       let stream = null;
 
@@ -430,6 +457,35 @@
             <div><small>mode=${esc(row.mode || "n/a")} | keys=${Number(row.active_connector_keys || 0)}</small></div>
           </div>
         `).join("") : "<small>No platform account status available.</small>";
+      }
+
+      async function runSpreadAnalysis(payload) {
+        const params = new URLSearchParams();
+        params.set("keyword", payload.keyword);
+        if (payload.topic) params.set("topic", payload.topic);
+        if (payload.constituency) params.set("constituency", payload.constituency);
+        params.set("hours", String(payload.hours || 168));
+        const res = await api(`/api/monitoring/spread-analysis?${params.toString()}`);
+        const data = await res.json();
+        if (!data.total_mentions) {
+          spreadAnalysisResultEl.innerHTML = `<small>No spread found. Suggestions: ${(data.suggestions || []).map(esc).join(" | ")}</small>`;
+          return;
+        }
+        spreadAnalysisResultEl.innerHTML = `
+          <div class="item">
+            <b>First seen:</b> ${esc(data.first_seen.posted_at)} on ${esc(data.first_seen.platform)} by ${esc(data.first_seen.author_handle)}
+            <div><small>topic=${esc(data.first_seen.topic)} harmful=${data.first_seen.harmful_claim_score}</small></div>
+            <div>${esc(data.first_seen.content_preview || "")}</div>
+          </div>
+          <div class="item">
+            <b>Total mentions:</b> ${data.total_mentions} | <b>harmful ratio:</b> ${data.harmful_ratio}
+            <div><small>Platform breakdown: ${(data.platform_breakdown || []).map((x) => `${esc(x.platform)}=${x.count}`).join(", ")}</small></div>
+          </div>
+          <div class="item">
+            <b>Suggestions</b>
+            <div><small>${(data.suggestions || []).map(esc).join(" | ")}</small></div>
+          </div>
+        `;
       }
 
       async function loadAuditLogs() {
@@ -665,6 +721,17 @@
         }
       });
 
+      document.getElementById("spreadAnalysisForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          const payload = Object.fromEntries(new FormData(e.target).entries());
+          payload.hours = Number(payload.hours || 168);
+          await runSpreadAnalysis(payload);
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
       document.getElementById("scanForm").addEventListener("submit", async (e) => {
         e.preventDefault();
         try {
@@ -674,7 +741,7 @@
             .split(",")
             .map((x) => x.trim())
             .filter(Boolean);
-          if (!payload.platforms.length) payload.platforms = ["x", "facebook", "whatsapp", "instagram", "telegram", "tiktok"];
+          if (!payload.platforms.length) payload.platforms = ["x", "facebook", "whatsapp", "google", "instagram", "telegram", "tiktok"];
           const res = await api("/api/connectors/scan-all", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
@@ -682,6 +749,24 @@
           });
           const data = await res.json();
           scanResultEl.textContent = `Scanned ${data.scanned_platforms.join(", ")} and created ${data.mentions_created} mentions`;
+          await refreshAll();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("googleScanForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          const payload = Object.fromEntries(new FormData(e.target).entries());
+          payload.max_results = Number(payload.max_results || 5);
+          const res = await api("/api/connectors/google/search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          googleScanResultEl.textContent = `Google scan created ${data.mentions_created} mentions from ${data.results_found} results for "${data.query}"`;
           await refreshAll();
         } catch (err) {
           alert(err.message);
@@ -835,6 +920,7 @@
           adminControlsEl.classList.toggle("hidden", currentRole !== "admin");
           platformConnectionsSectionEl.classList.toggle("hidden", currentRole !== "admin");
           scanSectionEl.classList.toggle("hidden", !["admin", "coordinator", "analyst"].includes(currentRole));
+          googleScanSectionEl.classList.toggle("hidden", !["admin", "coordinator", "analyst"].includes(currentRole));
           alertEndpointsSectionEl.classList.toggle("hidden", currentRole !== "admin");
           auditSectionEl.classList.toggle("hidden", currentRole !== "admin");
           usersSectionEl.classList.toggle("hidden", currentRole !== "admin");

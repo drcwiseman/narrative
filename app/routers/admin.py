@@ -299,8 +299,8 @@ def upsert_integration_credential(
     current_user: User = Depends(require_roles("admin")),
 ):
     platform = payload.platform.strip().lower()
-    if platform not in {"x", "facebook"}:
-        raise HTTPException(status_code=400, detail="Only x and facebook are currently supported here")
+    if platform not in {"x", "facebook", "whatsapp"}:
+        raise HTTPException(status_code=400, detail="Only x, facebook, and whatsapp are currently supported here")
 
     row = db.query(IntegrationCredential).filter(IntegrationCredential.platform == platform).first()
     if row is None:

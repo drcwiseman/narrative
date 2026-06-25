@@ -109,7 +109,7 @@ class AlertEndpointCreate(BaseModel):
 
 class ConnectorScanRequest(BaseModel):
     constituency: str = "default"
-    platforms: list[str] = ["x", "facebook", "whatsapp", "instagram", "telegram", "tiktok"]
+    platforms: list[str] = ["x", "facebook", "whatsapp", "google", "instagram", "telegram", "tiktok"]
     batch_size_per_platform: int = Field(default=2, ge=1, le=20)
 
 
@@ -126,3 +126,9 @@ class IntegrationCredentialUpsert(BaseModel):
     webhook_secret: str = ""
     verify_token: str = ""
     is_active: bool = True
+
+
+class GoogleSourceScanRequest(BaseModel):
+    query: str = Field(min_length=2)
+    constituency: str = "default"
+    max_results: int = Field(default=5, ge=1, le=10)

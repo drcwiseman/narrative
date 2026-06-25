@@ -1,6 +1,6 @@
 import csv
 import io
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -181,3 +181,82 @@ def list_saved_views(
 ):
     rows = db.query(SavedView).filter(SavedView.owner_email == current_user.email).order_by(desc(SavedView.created_at)).all()
     return [{"id": row.id, "name": row.name, "view_type": row.view_type, "query_json": row.query_json} for row in rows]
+
+
+@router.get("/spread-analysis")
+def spread_analysis(
+    keyword: str,
+    topic: str | None = None,
+    constituency: str | None = None,
+    hours: int = 168,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "coordinator", "analyst", "outreach")),
+):
+    window_hours = min(max(hours, 1), 24 * 30)
+    start_ts = datetime.utcnow() - timedelta(hours=window_hours)
+    query = (
+        db.query(Mention, Analysis)
+        .join(Analysis, Analysis.mention_id == Mention.id)
+        .filter(Mention.posted_at >= start_ts)
+        .filter(Mention.content.ilike(f"%{keyword}%"))
+    )
+    if topic:
+        query = query.filter(Analysis.topic == topic)
+    if constituency:
+        query = query.filter(Mention.constituency == constituency)
+
+    rows = query.order_by(Mention.posted_at.asc()).all()
+    if not rows:
+        return {
+            "ok": True,
+            "total_mentions": 0,
+            "keyword": keyword,
+            "window_hours": window_hours,
+            "suggestions": [
+                "No spread detected in selected window; keep monitoring with lower threshold.",
+                "Run Google Source Scan for external web context and compare with social mentions.",
+            ],
+        }
+
+    first_mention, first_analysis = rows[0]
+    platform_counts: dict[str, int] = {}
+    harmful_count = 0
+    timeline_counts: dict[str, int] = {}
+    for mention, analysis in rows:
+        platform = (mention.platform or "unknown").lower()
+        platform_counts[platform] = platform_counts.get(platform, 0) + 1
+        if analysis.is_harmful:
+            harmful_count += 1
+        hour_bucket = mention.posted_at.replace(minute=0, second=0, microsecond=0).isoformat()
+        timeline_counts[hour_bucket] = timeline_counts.get(hour_bucket, 0) + 1
+
+    harmful_ratio = harmful_count / max(len(rows), 1)
+    top_platform = max(platform_counts.items(), key=lambda x: x[1])[0]
+
+    suggestions = [
+        f"Prioritize rapid response messaging on {top_platform} where spread is currently highest.",
+        "Assign outreach tasks to trusted KOLs in affected constituencies within first 60 minutes.",
+    ]
+    if harmful_ratio >= 0.5:
+        suggestions.append("Escalate to critical workflow: activate high-severity Slack channel and legal/comms review.")
+    else:
+        suggestions.append("Maintain watch mode with hourly trend checks and targeted counter-message campaigns.")
+
+    return {
+        "ok": True,
+        "keyword": keyword,
+        "window_hours": window_hours,
+        "total_mentions": len(rows),
+        "harmful_ratio": round(harmful_ratio, 3),
+        "first_seen": {
+            "posted_at": first_mention.posted_at.isoformat(),
+            "platform": first_mention.platform,
+            "author_handle": first_mention.author_handle,
+            "topic": first_analysis.topic,
+            "harmful_claim_score": first_analysis.harmful_claim_score,
+            "content_preview": first_mention.content[:280],
+        },
+        "platform_breakdown": [{"platform": k, "count": v} for k, v in sorted(platform_counts.items())],
+        "timeline_hourly": [{"hour": k, "count": v} for k, v in sorted(timeline_counts.items())],
+        "suggestions": suggestions,
+    }
