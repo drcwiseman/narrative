@@ -9,10 +9,11 @@ from sqlalchemy.orm import Session
 from app.database import get_db
 from app.deps import require_roles
 from app.models import AlertEndpoint, AuditLog, ConnectorKey, User
-from app.schemas import AlertEndpointCreate, ConnectorKeyCreate
+from app.schemas import AlertEndpointCreate, ConnectorKeyCreate, DetectionRulesUpdate
 from app.services.notifications import dispatch_harmful_alerts
 from app.security import hash_connector_token
 from app.services.audit import write_audit_log
+from app.services.detection_rules import get_detection_rules, update_detection_rules
 
 
 router = APIRouter(prefix="/api/admin", tags=["admin"])
@@ -246,3 +247,24 @@ def test_alert_endpoint(
     results = dispatch_harmful_alerts(db, payload)
     write_audit_log(db, current_user, "alert_endpoint.test", "alert_endpoint", str(endpoint.id), {"results": results})
     return {"ok": True, "results": results}
+
+
+@router.get("/detection-rules")
+def read_detection_rules(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "coordinator")),
+):
+    rules = get_detection_rules(db)
+    write_audit_log(db, current_user, "detection_rules.read", "detection_rules")
+    return rules
+
+
+@router.put("/detection-rules")
+def save_detection_rules(
+    payload: DetectionRulesUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+):
+    rules = update_detection_rules(db, payload.model_dump())
+    write_audit_log(db, current_user, "detection_rules.update", "detection_rules")
+    return rules

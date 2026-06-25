@@ -188,3 +188,15 @@ class DeadLetterJob(Base):
     payload_json: Mapped[str] = mapped_column(Text, default="{}")
     reason: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class DetectionRuleConfig(Base):
+    __tablename__ = "detection_rule_config"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    negative_words_json: Mapped[str] = mapped_column(Text, default="[]")
+    harmful_patterns_json: Mapped[str] = mapped_column(Text, default="[]")
+    topic_keywords_json: Mapped[str] = mapped_column(Text, default="{}")
+    default_harmful_threshold: Mapped[float] = mapped_column(Float, default=0.5)
+    platform_harmful_thresholds_json: Mapped[str] = mapped_column(Text, default="{}")
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

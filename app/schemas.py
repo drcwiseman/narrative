@@ -111,3 +111,11 @@ class ConnectorScanRequest(BaseModel):
     constituency: str = "default"
     platforms: list[str] = ["x", "facebook", "whatsapp", "instagram", "telegram", "tiktok"]
     batch_size_per_platform: int = Field(default=2, ge=1, le=20)
+
+
+class DetectionRulesUpdate(BaseModel):
+    negative_words: list[str]
+    harmful_patterns: list[str]
+    topic_keywords: dict[str, list[str]]
+    default_harmful_threshold: float = Field(ge=0, le=1, default=0.5)
+    platform_harmful_thresholds: dict[str, float] = {}

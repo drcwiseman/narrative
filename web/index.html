@@ -188,6 +188,26 @@
         </form>
         <div id="usersList"></div>
       </section>
+
+      <section class="card hidden" id="detectionRulesSection">
+        <h2>Detection Rules</h2>
+        <small>Edit rules that control negative-word detection and harmful scoring.</small>
+        <label>Negative words (comma or newline separated)</label>
+        <textarea id="negativeWordsInput" rows="4" placeholder="fake, fraud, threat"></textarea>
+        <label>Harmful patterns (regex, one per line)</label>
+        <textarea id="harmfulPatternsInput" rows="5" placeholder="\bkill\b&#10;\battack\b"></textarea>
+        <label>Topic keywords (topic=word1,word2; one topic per line)</label>
+        <textarea id="topicKeywordsInput" rows="5" placeholder="elections=vote,ballot,results"></textarea>
+        <label>Default harmful threshold (0-1)</label>
+        <input id="defaultHarmfulThresholdInput" type="number" min="0" max="1" step="0.01" value="0.5" />
+        <label>Platform harmful thresholds (platform=value; one per line)</label>
+        <textarea id="platformThresholdsInput" rows="4" placeholder="x=0.6&#10;facebook=0.55"></textarea>
+        <div class="toolbar">
+          <button id="loadDetectionRules">Load Rules</button>
+          <button id="saveDetectionRules">Save Rules</button>
+        </div>
+        <small id="detectionRulesResult"></small>
+      </section>
     </div>
 
     <div class="grid">
@@ -239,6 +259,13 @@
       const auditLogsListEl = document.getElementById("auditLogsList");
       const usersSectionEl = document.getElementById("usersSection");
       const usersListEl = document.getElementById("usersList");
+      const detectionRulesSectionEl = document.getElementById("detectionRulesSection");
+      const negativeWordsInputEl = document.getElementById("negativeWordsInput");
+      const harmfulPatternsInputEl = document.getElementById("harmfulPatternsInput");
+      const topicKeywordsInputEl = document.getElementById("topicKeywordsInput");
+      const defaultHarmfulThresholdInputEl = document.getElementById("defaultHarmfulThresholdInput");
+      const platformThresholdsInputEl = document.getElementById("platformThresholdsInput");
+      const detectionRulesResultEl = document.getElementById("detectionRulesResult");
       const refreshKolsButton = document.getElementById("refreshKols");
       const rescoreResultEl = document.getElementById("rescoreResult");
       const refreshAccountsButton = document.getElementById("refreshAccounts");
@@ -393,6 +420,79 @@
         `).join("") : "<small>No users found.</small>";
       }
 
+      function parseWordList(input) {
+        return String(input || "")
+          .split(/[\n,]/)
+          .map((x) => x.trim().toLowerCase())
+          .filter(Boolean);
+      }
+
+      function parseKeyValueLines(input) {
+        const lines = String(input || "").split("\n").map((x) => x.trim()).filter(Boolean);
+        const mapping = {};
+        for (const line of lines) {
+          const idx = line.indexOf("=");
+          if (idx < 1) continue;
+          const key = line.slice(0, idx).trim().toLowerCase();
+          const value = line.slice(idx + 1).trim();
+          if (!key || !value) continue;
+          mapping[key] = value;
+        }
+        return mapping;
+      }
+
+      function renderDetectionRules(rules) {
+        negativeWordsInputEl.value = (rules.negative_words || []).join(", ");
+        harmfulPatternsInputEl.value = (rules.harmful_patterns || []).join("\n");
+        topicKeywordsInputEl.value = Object.entries(rules.topic_keywords || {})
+          .map(([topic, words]) => `${topic}=${(words || []).join(",")}`)
+          .join("\n");
+        defaultHarmfulThresholdInputEl.value = Number(rules.default_harmful_threshold ?? 0.5).toFixed(2);
+        platformThresholdsInputEl.value = Object.entries(rules.platform_harmful_thresholds || {})
+          .map(([platform, threshold]) => `${platform}=${threshold}`)
+          .join("\n");
+      }
+
+      async function loadDetectionRules() {
+        const res = await api("/api/admin/detection-rules");
+        const rules = await res.json();
+        renderDetectionRules(rules);
+        detectionRulesResultEl.textContent = "Rules loaded.";
+      }
+
+      async function saveDetectionRules() {
+        const rawTopic = parseKeyValueLines(topicKeywordsInputEl.value);
+        const rawThresholds = parseKeyValueLines(platformThresholdsInputEl.value);
+        const topicKeywords = {};
+        for (const [topic, words] of Object.entries(rawTopic)) {
+          topicKeywords[topic] = parseWordList(words);
+        }
+        const platformThresholds = {};
+        for (const [platform, threshold] of Object.entries(rawThresholds)) {
+          const numeric = Number(threshold);
+          if (!Number.isFinite(numeric) || numeric < 0 || numeric > 1) continue;
+          platformThresholds[platform] = numeric;
+        }
+        const payload = {
+          negative_words: parseWordList(negativeWordsInputEl.value),
+          harmful_patterns: String(harmfulPatternsInputEl.value)
+            .split("\n")
+            .map((x) => x.trim())
+            .filter(Boolean),
+          topic_keywords: topicKeywords,
+          default_harmful_threshold: Math.max(0, Math.min(1, Number(defaultHarmfulThresholdInputEl.value || 0.5))),
+          platform_harmful_thresholds: platformThresholds,
+        };
+        const res = await api("/api/admin/detection-rules", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const updated = await res.json();
+        renderDetectionRules(updated);
+        detectionRulesResultEl.textContent = "Rules saved.";
+      }
+
       async function refreshAll() {
         await Promise.all([loadMentions(), loadAlerts(), loadKols(), loadCampaigns()]);
       }
@@ -505,6 +605,14 @@
 
       refreshAccountsButton.addEventListener("click", () => {
         loadConnectedAccounts().catch((err) => alert(err.message));
+      });
+
+      document.getElementById("loadDetectionRules").addEventListener("click", () => {
+        loadDetectionRules().catch((err) => alert(err.message));
+      });
+
+      document.getElementById("saveDetectionRules").addEventListener("click", () => {
+        saveDetectionRules().catch((err) => alert(err.message));
       });
 
       document.getElementById("rescoreForm").addEventListener("submit", async (e) => {
@@ -674,9 +782,10 @@
           alertEndpointsSectionEl.classList.toggle("hidden", currentRole !== "admin");
           auditSectionEl.classList.toggle("hidden", currentRole !== "admin");
           usersSectionEl.classList.toggle("hidden", currentRole !== "admin");
+          detectionRulesSectionEl.classList.toggle("hidden", currentRole !== "admin");
           await Promise.all([refreshAll(), loadConnectedAccounts()]);
           if (currentRole === "admin") {
-            await Promise.all([listConnectorKeys(), listAlertEndpoints(), loadUsers()]);
+            await Promise.all([listConnectorKeys(), listAlertEndpoints(), loadUsers(), loadDetectionRules()]);
           }
           connectStream();
         } catch (err) {

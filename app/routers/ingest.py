@@ -12,6 +12,7 @@ from app.observability import METRICS
 from app.schemas import MentionCreate
 from app.services.analyzer import extract_topic, harmful_claim_score, score_sentiment
 from app.services.audit import write_audit_log
+from app.services.detection_rules import get_detection_rules
 from app.services.kol import upsert_kol_from_mention
 from app.services.notifications import dispatch_harmful_alerts
 from app.services.stream import event_stream
@@ -21,6 +22,7 @@ router = APIRouter(prefix="/api/mentions", tags=["mentions"])
 
 
 async def ingest_mention_internal(payload: MentionCreate, db: Session, actor_email: str = "system"):
+    rules = get_detection_rules(db)
     mention = Mention(
         platform=payload.platform,
         author_handle=payload.author_handle,
@@ -35,15 +37,20 @@ async def ingest_mention_internal(payload: MentionCreate, db: Session, actor_ema
     db.commit()
     db.refresh(mention)
 
-    sentiment = score_sentiment(payload.content)
-    topic = extract_topic(payload.content)
-    harmful_score = harmful_claim_score(payload.content)
+    sentiment = score_sentiment(payload.content, negative_words=rules["negative_words"])
+    topic = extract_topic(
+        payload.content,
+        topic_keywords={k: set(v) for k, v in rules["topic_keywords"].items()},
+    )
+    harmful_score = harmful_claim_score(payload.content, harmful_patterns=rules["harmful_patterns"])
+    platform_thresholds = rules.get("platform_harmful_thresholds", {})
+    harmful_threshold = float(platform_thresholds.get(payload.platform.lower(), rules["default_harmful_threshold"]))
     analysis = Analysis(
         mention_id=mention.id,
         sentiment_score=sentiment,
         topic=topic,
         harmful_claim_score=harmful_score,
-        is_harmful=1 if harmful_score >= 0.5 else 0,
+        is_harmful=1 if harmful_score >= harmful_threshold else 0,
     )
     db.add(analysis)
     db.commit()
@@ -61,6 +68,7 @@ async def ingest_mention_internal(payload: MentionCreate, db: Session, actor_ema
         "topic": topic,
         "harmful_claim_score": harmful_score,
         "is_harmful": analysis.is_harmful == 1,
+        "harmful_threshold": harmful_threshold,
         "kol_tier": kol.tier,
     }
     notification_results = dispatch_harmful_alerts(db, event)
