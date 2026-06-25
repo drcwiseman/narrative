@@ -1,9 +1,12 @@
 from pathlib import Path
 import asyncio
+import logging
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
+from sqlalchemy import text
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.database import Base, SessionLocal, engine
 from app.middleware import basic_rate_limit_middleware, request_context_middleware
@@ -13,6 +16,7 @@ from app.services.queue import process_pending_jobs
 
 
 Base.metadata.create_all(bind=engine)
+logger = logging.getLogger(__name__)
 
 app = FastAPI(title="Narrative Monitoring System", version="0.1.0")
 app.middleware("http")(request_context_middleware)
@@ -48,7 +52,13 @@ def signup_page():
 
 @app.get("/health")
 def health():
-    return {"ok": True}
+    db_ok = True
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except SQLAlchemyError:
+        db_ok = False
+    return {"ok": db_ok, "database": "ok" if db_ok else "error"}
 
 
 @app.get("/metrics")
@@ -73,4 +83,10 @@ async def queue_worker_loop() -> None:
 
 @app.on_event("startup")
 async def startup_worker() -> None:
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+    except SQLAlchemyError as exc:
+        logger.exception("Database connectivity check failed on startup")
+        raise RuntimeError("Database connectivity check failed") from exc
     asyncio.create_task(queue_worker_loop())

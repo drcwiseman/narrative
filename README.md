@@ -79,8 +79,11 @@ Authorization: Bearer <token>
 
 - `POST /api/mentions` ingest and auto-analyze mention
 - `POST /api/connectors/mentions` ingest via `X-Connector-Token` header
+- `GET /api/connectors/x/webhook` X CRC verification endpoint
 - `POST /api/connectors/x/webhook` native X webhook receiver
+- `GET /api/connectors/facebook/webhook` Facebook webhook verification endpoint
 - `POST /api/connectors/facebook/webhook` native Facebook webhook receiver
+- `GET /api/connectors/whatsapp/webhook` WhatsApp webhook verification endpoint
 - `POST /api/connectors/whatsapp/webhook` native WhatsApp webhook receiver
 - `POST /api/connectors/scan-all` scan all supported social platforms and ingest generated mentions
 - `GET /api/connectors/platforms` list supported social sources
@@ -115,14 +118,14 @@ Authorization: Bearer <token>
 
 ## Notes
 
-- Platform ingestion is modeled as API ingestion. You can integrate real connectors for X/Facebook/WhatsApp later by posting collected mentions into `POST /api/mentions`.
+- X, Facebook, and WhatsApp connectors now support native webhook verification and signature checks. If signatures are absent (for manual tests), fallback shared-secret headers are accepted.
 - Ingestion supports optional `Idempotency-Key` header for dedupe-safe retries.
 - Harmful claim detection and sentiment are rule-based for deterministic behavior and low-cost runtime.
 - Vercel runtime: without `DATABASE_URL`, the app auto-uses `/tmp/narrative.db` so SQLite works on serverless.
 - For production retention, set `DATABASE_URL` to managed Postgres.
 - Set `JWT_SECRET` in production.
 - Use `python scripts/db_migrate.py` to ensure schema before serving.
-- Configure platform secrets (`X_WEBHOOK_SECRET`, `FACEBOOK_WEBHOOK_SECRET`, `WHATSAPP_WEBHOOK_SECRET`) for native webhook receivers.
+- Configure platform secrets (`X_WEBHOOK_SECRET`, `FACEBOOK_WEBHOOK_SECRET`, `WHATSAPP_WEBHOOK_SECRET`) and verify tokens (`FACEBOOK_WEBHOOK_VERIFY_TOKEN`, `WHATSAPP_WEBHOOK_VERIFY_TOKEN`) for native webhook receivers.
 - Configure `SLACK_WEBHOOK_URL` and `CRM_WEBHOOK_URL` to activate external outbound integrations.
 
 ## Product and UX docs

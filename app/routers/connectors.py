@@ -1,10 +1,12 @@
-from datetime import datetime
 import base64
 import hashlib
 import hmac
 import random
+from datetime import datetime
+from typing import Any
+from urllib.parse import unquote
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -28,6 +30,124 @@ SCAN_TEMPLATES = [
     "Public health response is effective and hospitals report progress.",
     "Unverified claim says ballots were switched in central constituency.",
 ]
+
+
+def _hmac_sha256_base64(secret: str, payload: bytes) -> str:
+    digest = hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).digest()
+    return base64.b64encode(digest).decode("utf-8")
+
+
+def _hmac_sha256_hex(secret: str, payload: bytes) -> str:
+    return hmac.new(secret.encode("utf-8"), payload, hashlib.sha256).hexdigest()
+
+
+def _resolve_header(headers: dict[str, str], *names: str) -> str | None:
+    for name in names:
+        value = headers.get(name)
+        if value:
+            return value
+    return None
+
+
+def _verify_x_request_signature(raw_body: bytes, signature_header: str | None) -> bool:
+    if not settings.x_webhook_secret or not signature_header:
+        return False
+    expected = "sha256=" + _hmac_sha256_base64(settings.x_webhook_secret, raw_body)
+    return hmac.compare_digest(signature_header, expected)
+
+
+def _verify_meta_signature(raw_body: bytes, signature_header: str | None, secret: str) -> bool:
+    if not secret or not signature_header:
+        return False
+    expected = "sha256=" + _hmac_sha256_hex(secret, raw_body)
+    return hmac.compare_digest(signature_header, expected)
+
+
+def _parse_x_mentions(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    parsed: list[dict[str, Any]] = []
+    tweet_events = payload.get("tweet_create_events")
+    if isinstance(tweet_events, list):
+        for event in tweet_events:
+            user = event.get("user") if isinstance(event, dict) else {}
+            parsed.append(
+                {
+                    "platform": "x",
+                    "author_handle": f"@{(user or {}).get('screen_name', 'unknown')}",
+                    "author_name": (user or {}).get("name", ""),
+                    "followers": int((user or {}).get("followers_count", 0) or 0),
+                    "engagement_rate": 0.0,
+                    "constituency": "default",
+                    "content": event.get("text", "") if isinstance(event, dict) else "",
+                    "posted_at": datetime.utcnow().isoformat(),
+                }
+            )
+    elif isinstance(payload, dict):
+        parsed.append(
+            {
+                "platform": "x",
+                "author_handle": payload.get("author_handle", "@unknown"),
+                "author_name": payload.get("author_name", ""),
+                "followers": int(payload.get("followers", 0) or 0),
+                "engagement_rate": float(payload.get("engagement_rate", 0) or 0),
+                "constituency": payload.get("constituency", "default"),
+                "content": payload.get("content", ""),
+                "posted_at": datetime.utcnow().isoformat(),
+            }
+        )
+    return [row for row in parsed if row.get("content")]
+
+
+def _parse_facebook_mentions(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    parsed: list[dict[str, Any]] = []
+    entries = payload.get("entry")
+    if not isinstance(entries, list):
+        return parsed
+    for entry in entries:
+        for change in (entry.get("changes", []) if isinstance(entry, dict) else []):
+            value = change.get("value", {}) if isinstance(change, dict) else {}
+            message = value.get("message") or value.get("text") or ""
+            actor = value.get("from", {}) if isinstance(value.get("from"), dict) else {}
+            if message:
+                parsed.append(
+                    {
+                        "platform": "facebook",
+                        "author_handle": f"@{actor.get('id', 'unknown')}",
+                        "author_name": actor.get("name", ""),
+                        "followers": 0,
+                        "engagement_rate": 0.0,
+                        "constituency": "default",
+                        "content": message,
+                        "posted_at": datetime.utcnow().isoformat(),
+                    }
+                )
+    return parsed
+
+
+def _parse_whatsapp_mentions(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    parsed: list[dict[str, Any]] = []
+    entries = payload.get("entry")
+    if not isinstance(entries, list):
+        return parsed
+    for entry in entries:
+        for change in (entry.get("changes", []) if isinstance(entry, dict) else []):
+            value = change.get("value", {}) if isinstance(change, dict) else {}
+            for message in (value.get("messages", []) if isinstance(value, dict) else []):
+                text = message.get("text", {}) if isinstance(message, dict) else {}
+                content = text.get("body", "") if isinstance(text, dict) else ""
+                if content:
+                    parsed.append(
+                        {
+                            "platform": "whatsapp",
+                            "author_handle": f"@{message.get('from', 'unknown')}",
+                            "author_name": message.get("profile", {}).get("name", ""),
+                            "followers": 0,
+                            "engagement_rate": 0.0,
+                            "constituency": "default",
+                            "content": content,
+                            "posted_at": datetime.utcnow().isoformat(),
+                        }
+                    )
+    return parsed
 
 
 @router.post("/mentions")
@@ -122,24 +242,22 @@ def _verify_platform_secret(secret: str | None, expected: str, platform: str) ->
 
 
 @router.post("/x/webhook")
-def ingest_x_webhook(
-    payload: dict,
-    x_webhook_secret: str | None = Header(default=None),
-    db: Session = Depends(get_db),
-):
-    _verify_platform_secret(x_webhook_secret, settings.x_webhook_secret, "x")
-    mention = {
-        "platform": "x",
-        "author_handle": payload.get("author_handle", "@unknown"),
-        "author_name": payload.get("author_name", ""),
-        "followers": int(payload.get("followers", 0)),
-        "engagement_rate": float(payload.get("engagement_rate", 0)),
-        "constituency": payload.get("constituency", "default"),
-        "content": payload.get("content", ""),
-        "posted_at": datetime.utcnow().isoformat(),
-    }
-    job = enqueue_job(db, "mention_ingest", mention)
-    return {"ok": True, "queued_job_id": job.id}
+async def ingest_x_webhook(request: Request, db: Session = Depends(get_db)):
+    raw_body = await request.body()
+    headers = {k.lower(): v for k, v in request.headers.items()}
+    signature_header = _resolve_header(headers, "x-twitter-webhooks-signature")
+    fallback_secret = _resolve_header(headers, "x-webhook-secret")
+
+    signature_ok = _verify_x_request_signature(raw_body, signature_header)
+    if not signature_ok:
+        _verify_platform_secret(fallback_secret, settings.x_webhook_secret, "x")
+
+    payload = await request.json()
+    mentions = _parse_x_mentions(payload)
+    if not mentions:
+        raise HTTPException(status_code=400, detail="No mention content found in X webhook payload")
+    job_ids = [enqueue_job(db, "mention_ingest", mention).id for mention in mentions]
+    return {"ok": True, "queued_jobs": len(job_ids), "queued_job_ids": job_ids}
 
 
 @router.get("/x/webhook")
@@ -151,52 +269,75 @@ def verify_x_webhook_crc(crc_token: str = Query(...)):
     """
     if not settings.x_webhook_secret:
         raise HTTPException(status_code=503, detail="X_WEBHOOK_SECRET not configured")
-    digest = hmac.new(
-        settings.x_webhook_secret.encode("utf-8"),
-        crc_token.encode("utf-8"),
-        hashlib.sha256,
-    ).digest()
-    response_token = "sha256=" + base64.b64encode(digest).decode("utf-8")
+    response_token = "sha256=" + _hmac_sha256_base64(settings.x_webhook_secret, crc_token.encode("utf-8"))
     return {"response_token": response_token}
 
 
-@router.post("/facebook/webhook")
-def ingest_facebook_webhook(
-    payload: dict,
-    x_webhook_secret: str | None = Header(default=None),
-    db: Session = Depends(get_db),
+@router.get("/facebook/webhook")
+def verify_facebook_webhook(
+    hub_mode: str = Query(default="", alias="hub.mode"),
+    hub_verify_token: str = Query(default="", alias="hub.verify_token"),
+    hub_challenge: str = Query(default="", alias="hub.challenge"),
 ):
-    _verify_platform_secret(x_webhook_secret, settings.facebook_webhook_secret, "facebook")
-    mention = {
-        "platform": "facebook",
-        "author_handle": payload.get("author_handle", "@unknown"),
-        "author_name": payload.get("author_name", ""),
-        "followers": int(payload.get("followers", 0)),
-        "engagement_rate": float(payload.get("engagement_rate", 0)),
-        "constituency": payload.get("constituency", "default"),
-        "content": payload.get("content", ""),
-        "posted_at": datetime.utcnow().isoformat(),
-    }
-    job = enqueue_job(db, "mention_ingest", mention)
-    return {"ok": True, "queued_job_id": job.id}
+    expected_token = settings.facebook_webhook_verify_token or settings.facebook_webhook_secret
+    if not expected_token:
+        raise HTTPException(status_code=503, detail="FACEBOOK_WEBHOOK_VERIFY_TOKEN not configured")
+    if hub_mode != "subscribe" or hub_verify_token != expected_token:
+        raise HTTPException(status_code=403, detail="Facebook webhook verification failed")
+    return Response(content=unquote(hub_challenge), media_type="text/plain")
+
+
+@router.post("/facebook/webhook")
+async def ingest_facebook_webhook(request: Request, db: Session = Depends(get_db)):
+    raw_body = await request.body()
+    headers = {k.lower(): v for k, v in request.headers.items()}
+    signature_header = _resolve_header(headers, "x-hub-signature-256")
+    fallback_secret = _resolve_header(headers, "x-webhook-secret", "x-facebook-webhook-secret")
+
+    signature_ok = _verify_meta_signature(raw_body, signature_header, settings.facebook_webhook_secret)
+    if not signature_ok:
+        _verify_platform_secret(fallback_secret, settings.facebook_webhook_secret, "facebook")
+
+    payload = await request.json()
+    mentions = _parse_facebook_mentions(payload)
+    if not mentions:
+        mentions = _parse_x_mentions(payload)  # fallback for manual test payloads
+    if not mentions:
+        raise HTTPException(status_code=400, detail="No mention content found in Facebook webhook payload")
+    job_ids = [enqueue_job(db, "mention_ingest", mention).id for mention in mentions]
+    return {"ok": True, "queued_jobs": len(job_ids), "queued_job_ids": job_ids}
+
+
+@router.get("/whatsapp/webhook")
+def verify_whatsapp_webhook(
+    hub_mode: str = Query(default="", alias="hub.mode"),
+    hub_verify_token: str = Query(default="", alias="hub.verify_token"),
+    hub_challenge: str = Query(default="", alias="hub.challenge"),
+):
+    expected_token = settings.whatsapp_webhook_verify_token or settings.whatsapp_webhook_secret
+    if not expected_token:
+        raise HTTPException(status_code=503, detail="WHATSAPP_WEBHOOK_VERIFY_TOKEN not configured")
+    if hub_mode != "subscribe" or hub_verify_token != expected_token:
+        raise HTTPException(status_code=403, detail="WhatsApp webhook verification failed")
+    return Response(content=unquote(hub_challenge), media_type="text/plain")
 
 
 @router.post("/whatsapp/webhook")
-def ingest_whatsapp_webhook(
-    payload: dict,
-    x_webhook_secret: str | None = Header(default=None),
-    db: Session = Depends(get_db),
-):
-    _verify_platform_secret(x_webhook_secret, settings.whatsapp_webhook_secret, "whatsapp")
-    mention = {
-        "platform": "whatsapp",
-        "author_handle": payload.get("author_handle", "@unknown"),
-        "author_name": payload.get("author_name", ""),
-        "followers": int(payload.get("followers", 0)),
-        "engagement_rate": float(payload.get("engagement_rate", 0)),
-        "constituency": payload.get("constituency", "default"),
-        "content": payload.get("content", ""),
-        "posted_at": datetime.utcnow().isoformat(),
-    }
-    job = enqueue_job(db, "mention_ingest", mention)
-    return {"ok": True, "queued_job_id": job.id}
+async def ingest_whatsapp_webhook(request: Request, db: Session = Depends(get_db)):
+    raw_body = await request.body()
+    headers = {k.lower(): v for k, v in request.headers.items()}
+    signature_header = _resolve_header(headers, "x-hub-signature-256")
+    fallback_secret = _resolve_header(headers, "x-webhook-secret", "x-whatsapp-webhook-secret")
+
+    signature_ok = _verify_meta_signature(raw_body, signature_header, settings.whatsapp_webhook_secret)
+    if not signature_ok:
+        _verify_platform_secret(fallback_secret, settings.whatsapp_webhook_secret, "whatsapp")
+
+    payload = await request.json()
+    mentions = _parse_whatsapp_mentions(payload)
+    if not mentions:
+        mentions = _parse_x_mentions(payload)  # fallback for manual test payloads
+    if not mentions:
+        raise HTTPException(status_code=400, detail="No mention content found in WhatsApp webhook payload")
+    job_ids = [enqueue_job(db, "mention_ingest", mention).id for mention in mentions]
+    return {"ok": True, "queued_jobs": len(job_ids), "queued_job_ids": job_ids}

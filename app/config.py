@@ -17,6 +17,8 @@ class Settings:
     x_webhook_secret: str = os.getenv("X_WEBHOOK_SECRET", "")
     facebook_webhook_secret: str = os.getenv("FACEBOOK_WEBHOOK_SECRET", "")
     whatsapp_webhook_secret: str = os.getenv("WHATSAPP_WEBHOOK_SECRET", "")
+    facebook_webhook_verify_token: str = os.getenv("FACEBOOK_WEBHOOK_VERIFY_TOKEN", "")
+    whatsapp_webhook_verify_token: str = os.getenv("WHATSAPP_WEBHOOK_VERIFY_TOKEN", "")
 
 
 settings = Settings()
