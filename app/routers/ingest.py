@@ -13,7 +13,7 @@ from app.schemas import MentionCreate, MentionUpdate
 from app.services.analyzer import emotion_scores, extract_claim_candidates, extract_topic, harmful_claim_score, score_sentiment
 from app.services.audit import write_audit_log
 from app.services.detection_rules import get_detection_rules
-from app.services.kol import decrement_kol_from_mention, upsert_kol_from_mention
+from app.services.kol import decrement_kol_from_mention, delete_mention_record, purge_author_handle, upsert_kol_from_mention
 from app.services.narratives import add_claims, add_emotion_signal, upsert_emotion_signal, upsert_narrative
 from app.services.notifications import dispatch_harmful_alerts
 from app.services.stream import event_stream
@@ -297,10 +297,7 @@ def delete_mention(
         raise HTTPException(status_code=404, detail="Mention not found")
 
     handle = mention.author_handle
-    db.query(Claim).filter(Claim.mention_id == mention_id).delete()
-    db.query(EmotionSignal).filter(EmotionSignal.mention_id == mention_id).delete()
-    db.query(Analysis).filter(Analysis.mention_id == mention_id).delete()
-    db.delete(mention)
+    delete_mention_record(db, mention)
     db.commit()
     decrement_kol_from_mention(db, handle)
 

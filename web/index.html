@@ -901,7 +901,7 @@
         kolsEl.innerHTML = `
           <div class="data-table">
             <div class="data-row data-head">
-              <span>Rank</span><span>Handle</span><span>Tier</span><span>Score</span><span>Followers</span><span>Mentions</span>
+              <span>Rank</span><span>Handle</span><span>Tier</span><span>Score</span><span>Followers</span><span>Mentions</span><span>Actions</span>
             </div>
             ${data.map((row, idx) => `
               <div class="data-row">
@@ -911,6 +911,7 @@
                 <span>${Number(row.influence_score).toFixed(2)}</span>
                 <span>${row.followers}</span>
                 <span>${row.mention_count}</span>
+                <span><button type="button" class="btn-danger btn-compact" data-delete-kol="${esc(row.handle)}">Delete</button></span>
               </div>
             `).join("")}
           </div>
@@ -1597,6 +1598,21 @@
       refreshKolsButton.addEventListener("click", () => {
         loadKols().catch((err) => alert(err.message));
       });
+
+      kolsEl.addEventListener("click", async (e) => {
+        const deleteBtn = e.target.closest("[data-delete-kol]");
+        if (!deleteBtn) return;
+        const handle = deleteBtn.dataset.deleteKol;
+        if (!handle) return;
+        try {
+          if (!confirm(`Delete ${handle} and all linked mentions?`)) return;
+          await api(`/api/kols/${encodeURIComponent(handle)}`, { method: "DELETE" });
+          await refreshAll();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
       document.getElementById("refreshExecutiveOverview").addEventListener("click", () => {
         loadExecutiveOverview().catch((err) => alert(err.message));
       });

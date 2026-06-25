@@ -4,7 +4,51 @@ from datetime import datetime
 
 from sqlalchemy.orm import Session
 
-from app.models import KOLScore, Mention
+from app.models import Analysis, Claim, EmotionSignal, KOLScore, Mention
+
+
+def normalize_handle(handle: str) -> str:
+    value = handle.strip()
+    if not value:
+        return value
+    return value if value.startswith("@") else f"@{value}"
+
+
+def handle_variants(handle: str) -> set[str]:
+    normalized = normalize_handle(handle)
+    bare = normalized.lstrip("@")
+    return {normalized, bare, f"@{bare}"}
+
+
+def delete_mention_record(db: Session, mention: Mention) -> None:
+    mention_id = mention.id
+    db.query(Claim).filter(Claim.mention_id == mention_id).delete()
+    db.query(EmotionSignal).filter(EmotionSignal.mention_id == mention_id).delete()
+    db.query(Analysis).filter(Analysis.mention_id == mention_id).delete()
+    db.delete(mention)
+
+
+def purge_author_handle(db: Session, handle: str) -> dict:
+    variants = handle_variants(handle)
+    mentions = db.query(Mention).filter(Mention.author_handle.in_(variants)).all()
+    deleted_mention_ids = []
+    for mention in mentions:
+        deleted_mention_ids.append(mention.id)
+        delete_mention_record(db, mention)
+
+    kol = db.query(KOLScore).filter(KOLScore.handle.in_(variants)).first()
+    kol_deleted = False
+    if kol is not None:
+        db.delete(kol)
+        kol_deleted = True
+
+    db.commit()
+    return {
+        "handle": normalize_handle(handle),
+        "deleted_mentions": len(deleted_mention_ids),
+        "mention_ids": deleted_mention_ids,
+        "kol_deleted": kol_deleted,
+    }
 
 
 def get_tier(score: float) -> str:

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
@@ -6,7 +6,8 @@ from app.database import get_db
 from app.deps import require_roles
 from app.models import KOLScore
 from app.models import User
-from app.services.kol import rescore_constituency
+from app.services.kol import purge_author_handle, rescore_constituency
+from app.services.audit import write_audit_log
 
 
 router = APIRouter(prefix="/api/kols", tags=["kols"])
@@ -36,6 +37,26 @@ def get_kol_leaderboard(
         }
         for row in rows
     ]
+
+
+@router.delete("/{handle:path}")
+def delete_kol(
+    handle: str,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "coordinator", "analyst")),
+):
+    result = purge_author_handle(db, handle)
+    if not result["kol_deleted"] and not result["deleted_mentions"]:
+        raise HTTPException(status_code=404, detail="KOL or mentions not found for handle")
+    write_audit_log(
+        db,
+        current_user,
+        "kol.delete",
+        "kol",
+        result["handle"],
+        result,
+    )
+    return {"ok": True, **result}
 
 
 @router.post("/rescore")
