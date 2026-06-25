@@ -11,7 +11,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.database import Base, SessionLocal, engine
 from app.middleware import basic_rate_limit_middleware, request_context_middleware
 from app.observability import metrics_snapshot
-from app.routers import admin, auth, campaigns, connectors, ingest, kol, monitoring, queue
+from app.routers import admin, auth, campaigns, connectors, ingest, kol, monitoring, queue, reports
 from app.services.queue import process_pending_jobs
 
 
@@ -29,6 +29,7 @@ app.include_router(monitoring.router)
 app.include_router(kol.router)
 app.include_router(campaigns.router)
 app.include_router(queue.router)
+app.include_router(reports.router)
 
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "web"

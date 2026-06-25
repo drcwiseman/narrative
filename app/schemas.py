@@ -132,3 +132,20 @@ class GoogleSourceScanRequest(BaseModel):
     query: str = Field(min_length=2)
     constituency: str = "default"
     max_results: int = Field(default=5, ge=1, le=10)
+
+
+class SourceScanRequest(BaseModel):
+    query: str = Field(min_length=2)
+    constituency: str = "default"
+    max_results: int = Field(default=5, ge=1, le=10)
+
+
+class OrganizationCreate(BaseModel):
+    name: str
+    sector: str = "general"
+
+
+class OrganizationMemberUpsert(BaseModel):
+    organization_id: int
+    user_email: str
+    role: str = "analyst"

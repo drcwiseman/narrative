@@ -9,3 +9,5 @@ passlib
 email-validator
 alembic
 psycopg[binary]
+reportlab
+python-pptx

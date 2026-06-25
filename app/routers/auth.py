@@ -23,7 +23,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="User already exists")
 
     first_user = db.query(User).count() == 0
-    role = "admin" if first_user else "coordinator"
+    role = "platform_admin" if first_user else "org_admin"
     user = User(
         email=payload.email.lower(),
         full_name=payload.full_name,

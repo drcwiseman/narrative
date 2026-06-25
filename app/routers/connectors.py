@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import random
 import time
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import Any
 from urllib.parse import unquote
@@ -17,14 +18,14 @@ from app.deps import require_roles
 from app.models import ConnectorKey, IdempotencyRecord, IntegrationCredential
 from app.routers.ingest import ingest_mention_internal
 from app.services.queue import enqueue_job
-from app.schemas import ConnectorScanRequest, GoogleSourceScanRequest, MentionCreate
+from app.schemas import ConnectorScanRequest, GoogleSourceScanRequest, MentionCreate, SourceScanRequest
 from app.models import User
 from app.security import verify_connector_token
 
 
 router = APIRouter(prefix="/api/connectors", tags=["connectors"])
 
-SUPPORTED_PLATFORMS = ["x", "facebook", "whatsapp", "google", "slack", "instagram", "telegram", "tiktok"]
+SUPPORTED_PLATFORMS = ["x", "facebook", "whatsapp", "google", "reddit", "youtube", "news", "blogs", "slack", "instagram", "telegram", "tiktok"]
 SCAN_TEMPLATES = [
     "Election update says results are fake news across districts.",
     "Community jobs program is improving local businesses and trust.",
@@ -454,6 +455,173 @@ async def google_source_scan(
         "mentions_created": len(mention_ids),
         "mention_ids": mention_ids,
     }
+
+
+async def _ingest_source_items(
+    db: Session,
+    actor_email: str,
+    platform: str,
+    constituency: str,
+    items: list[dict[str, str]],
+) -> list[int]:
+    mention_ids: list[int] = []
+    for item in items:
+        content = item.get("content", "").strip()
+        if not content:
+            continue
+        mention_payload = MentionCreate(
+            platform=platform,
+            author_handle=item.get("author_handle", f"@{platform}_source"),
+            author_name=item.get("author_name", f"{platform.title()} Source"),
+            followers=0,
+            engagement_rate=0.0,
+            constituency=constituency,
+            content=content,
+            posted_at=datetime.utcnow(),
+        )
+        result = await ingest_mention_internal(mention_payload, db, actor_email=actor_email)
+        mention_ids.append(result["mention_id"])
+    return mention_ids
+
+
+@router.post("/reddit/search")
+async def reddit_source_scan(
+    payload: SourceScanRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "coordinator", "analyst")),
+):
+    try:
+        response = requests.get(
+            "https://www.reddit.com/search.json",
+            params={"q": payload.query, "limit": payload.max_results, "sort": "new"},
+            timeout=10,
+            headers={"User-Agent": "narrative-intelligence/1.0"},
+        )
+        response.raise_for_status()
+        children = response.json().get("data", {}).get("children", [])
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Reddit search request failed: {exc}") from exc
+
+    items = []
+    for row in children:
+        data = row.get("data", {})
+        title = str(data.get("title", "")).strip()
+        body = str(data.get("selftext", "")).strip()
+        permalink = str(data.get("permalink", "")).strip()
+        content = f"{title} {body} https://reddit.com{permalink}".strip()
+        items.append(
+            {
+                "author_handle": f"@{data.get('author', 'reddit_user')}",
+                "author_name": "Reddit User",
+                "content": content,
+            }
+        )
+    mention_ids = await _ingest_source_items(db, current_user.email, "reddit", payload.constituency, items)
+    return {"ok": True, "query": payload.query, "results_found": len(items), "mentions_created": len(mention_ids), "mention_ids": mention_ids}
+
+
+@router.post("/youtube/search")
+async def youtube_source_scan(
+    payload: SourceScanRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "coordinator", "analyst")),
+):
+    if not settings.youtube_api_key:
+        raise HTTPException(status_code=503, detail="YOUTUBE_API_KEY is required for YouTube source scan")
+    try:
+        response = requests.get(
+            "https://www.googleapis.com/youtube/v3/search",
+            params={
+                "part": "snippet",
+                "q": payload.query,
+                "maxResults": payload.max_results,
+                "type": "video",
+                "key": settings.youtube_api_key,
+            },
+            timeout=10,
+        )
+        response.raise_for_status()
+        entries = response.json().get("items", [])
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"YouTube search request failed: {exc}") from exc
+    items = []
+    for entry in entries:
+        snippet = entry.get("snippet", {})
+        video_id = entry.get("id", {}).get("videoId", "")
+        title = str(snippet.get("title", "")).strip()
+        description = str(snippet.get("description", "")).strip()
+        channel = str(snippet.get("channelTitle", "YouTube Channel")).strip()
+        content = f"{title} - {description} https://youtube.com/watch?v={video_id}".strip()
+        items.append({"author_handle": f"@{channel.lower().replace(' ', '_')}", "author_name": channel, "content": content})
+    mention_ids = await _ingest_source_items(db, current_user.email, "youtube", payload.constituency, items)
+    return {"ok": True, "query": payload.query, "results_found": len(items), "mentions_created": len(mention_ids), "mention_ids": mention_ids}
+
+
+@router.post("/news/search")
+async def news_source_scan(
+    payload: SourceScanRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "coordinator", "analyst")),
+):
+    try:
+        response = requests.get(
+            "https://news.google.com/rss/search",
+            params={"q": payload.query, "hl": "en-US", "gl": "US", "ceid": "US:en"},
+            timeout=10,
+        )
+        response.raise_for_status()
+        root = ET.fromstring(response.text)
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"News search request failed: {exc}") from exc
+    except ET.ParseError as exc:
+        raise HTTPException(status_code=502, detail=f"News feed parse failed: {exc}") from exc
+
+    items = []
+    for item in root.findall(".//item")[: payload.max_results]:
+        title = (item.findtext("title") or "").strip()
+        link = (item.findtext("link") or "").strip()
+        source = ""
+        source_el = item.find("{http://search.yahoo.com/mrss/}source")
+        if source_el is not None and source_el.text:
+            source = source_el.text.strip()
+        content = f"{title} ({link})".strip()
+        items.append({"author_handle": "@news_source", "author_name": source or "News Source", "content": content})
+    mention_ids = await _ingest_source_items(db, current_user.email, "news", payload.constituency, items)
+    return {"ok": True, "query": payload.query, "results_found": len(items), "mentions_created": len(mention_ids), "mention_ids": mention_ids}
+
+
+@router.post("/blogs/search")
+async def blogs_source_scan(
+    payload: SourceScanRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "coordinator", "analyst")),
+):
+    # Fallback implementation uses Google CSE to discover blog-like sources quickly.
+    if not settings.google_cse_api_key or not settings.google_cse_cx:
+        raise HTTPException(status_code=503, detail="GOOGLE_CSE_API_KEY and GOOGLE_CSE_CX required for blog scan")
+    try:
+        response = requests.get(
+            "https://www.googleapis.com/customsearch/v1",
+            params={
+                "key": settings.google_cse_api_key,
+                "cx": settings.google_cse_cx,
+                "q": f"{payload.query} site:blog",
+                "num": payload.max_results,
+            },
+            timeout=10,
+        )
+        response.raise_for_status()
+        results = response.json().get("items", [])
+    except requests.RequestException as exc:
+        raise HTTPException(status_code=502, detail=f"Blog search request failed: {exc}") from exc
+    items = []
+    for row in results:
+        title = str(row.get("title", "")).strip()
+        snippet = str(row.get("snippet", "")).strip()
+        link = str(row.get("link", "")).strip()
+        items.append({"author_handle": "@blog_source", "author_name": "Blog Source", "content": f"{title} - {snippet} ({link})"})
+    mention_ids = await _ingest_source_items(db, current_user.email, "blogs", payload.constituency, items)
+    return {"ok": True, "query": payload.query, "results_found": len(items), "mentions_created": len(mention_ids), "mention_ids": mention_ids}
 
 
 def _verify_platform_secret(secret: str | None, expected: str, platform: str) -> None:

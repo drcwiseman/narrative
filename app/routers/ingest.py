@@ -10,10 +10,11 @@ from app.deps import require_roles
 from app.models import Analysis, IdempotencyRecord, Mention, User
 from app.observability import METRICS
 from app.schemas import MentionCreate
-from app.services.analyzer import extract_topic, harmful_claim_score, score_sentiment
+from app.services.analyzer import emotion_scores, extract_claim_candidates, extract_topic, harmful_claim_score, score_sentiment
 from app.services.audit import write_audit_log
 from app.services.detection_rules import get_detection_rules
 from app.services.kol import upsert_kol_from_mention
+from app.services.narratives import add_claims, add_emotion_signal, upsert_narrative
 from app.services.notifications import dispatch_harmful_alerts
 from app.services.stream import event_stream
 
@@ -43,6 +44,8 @@ async def ingest_mention_internal(payload: MentionCreate, db: Session, actor_ema
         topic_keywords={k: set(v) for k, v in rules["topic_keywords"].items()},
     )
     harmful_score = harmful_claim_score(payload.content, harmful_patterns=rules["harmful_patterns"])
+    emotions = emotion_scores(payload.content)
+    claim_candidates = extract_claim_candidates(payload.content)
     platform_thresholds = rules.get("platform_harmful_thresholds", {})
     harmful_threshold = float(platform_thresholds.get(payload.platform.lower(), rules["default_harmful_threshold"]))
     analysis = Analysis(
@@ -55,6 +58,22 @@ async def ingest_mention_internal(payload: MentionCreate, db: Session, actor_ema
     db.add(analysis)
     db.commit()
     db.refresh(analysis)
+    narrative = upsert_narrative(
+        db,
+        topic=topic,
+        constituency=mention.constituency,
+        posted_at=mention.posted_at,
+        harmful_score=harmful_score,
+    )
+    add_emotion_signal(db, mention_id=mention.id, emotions=emotions)
+    if claim_candidates:
+        add_claims(
+            db,
+            narrative_id=narrative.id,
+            mention_id=mention.id,
+            claims=claim_candidates,
+            harmful_score=harmful_score,
+        )
 
     kol = upsert_kol_from_mention(db, mention)
 
@@ -69,6 +88,8 @@ async def ingest_mention_internal(payload: MentionCreate, db: Session, actor_ema
         "harmful_claim_score": harmful_score,
         "is_harmful": analysis.is_harmful == 1,
         "harmful_threshold": harmful_threshold,
+        "narrative_id": narrative.id,
+        "emotions": emotions,
         "kol_tier": kol.tier,
     }
     notification_results = dispatch_harmful_alerts(db, event)

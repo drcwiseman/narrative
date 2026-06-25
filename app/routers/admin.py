@@ -8,8 +8,15 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import require_roles
-from app.models import AlertEndpoint, AuditLog, ConnectorKey, IntegrationCredential, User
-from app.schemas import AlertEndpointCreate, ConnectorKeyCreate, DetectionRulesUpdate, IntegrationCredentialUpsert
+from app.models import AlertEndpoint, AuditLog, ConnectorKey, IntegrationCredential, Organization, OrganizationMember, User
+from app.schemas import (
+    AlertEndpointCreate,
+    ConnectorKeyCreate,
+    DetectionRulesUpdate,
+    IntegrationCredentialUpsert,
+    OrganizationCreate,
+    OrganizationMemberUpsert,
+)
 from app.services.notifications import dispatch_harmful_alerts
 from app.security import hash_connector_token
 from app.services.audit import write_audit_log
@@ -197,7 +204,7 @@ def update_user_role(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin")),
 ):
-    if role not in {"admin", "coordinator", "analyst", "outreach"}:
+    if role not in {"admin", "platform_admin", "org_admin", "coordinator", "analyst", "outreach"}:
         raise HTTPException(status_code=400, detail="Invalid role")
     user = db.query(User).filter(User.id == user_id).first()
     if user is None:
@@ -330,3 +337,97 @@ def upsert_integration_credential(
         "has_verify_token": bool(row.verify_token),
         "secret_preview": f"{row.webhook_secret[:4]}..." if row.webhook_secret else "",
     }
+
+
+@router.post("/organizations")
+def create_organization(
+    payload: OrganizationCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "platform_admin")),
+):
+    existing = db.query(Organization).filter(Organization.name == payload.name).first()
+    if existing:
+        raise HTTPException(status_code=409, detail="Organization already exists")
+    row = Organization(name=payload.name.strip(), sector=payload.sector.strip() or "general")
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    write_audit_log(db, current_user, "organization.create", "organization", str(row.id), {"name": row.name})
+    return {"id": row.id, "name": row.name, "sector": row.sector}
+
+
+@router.get("/organizations")
+def list_organizations(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "platform_admin", "org_admin", "coordinator")),
+):
+    rows = db.query(Organization).order_by(Organization.created_at.desc()).all()
+    return [{"id": row.id, "name": row.name, "sector": row.sector, "created_at": row.created_at.isoformat()} for row in rows]
+
+
+@router.put("/organization-members")
+def upsert_organization_member(
+    payload: OrganizationMemberUpsert,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "platform_admin", "org_admin")),
+):
+    org = db.query(Organization).filter(Organization.id == payload.organization_id).first()
+    if org is None:
+        raise HTTPException(status_code=404, detail="Organization not found")
+    member = (
+        db.query(OrganizationMember)
+        .filter(
+            OrganizationMember.organization_id == payload.organization_id,
+            OrganizationMember.user_email == payload.user_email,
+        )
+        .first()
+    )
+    if member is None:
+        member = OrganizationMember(
+            organization_id=payload.organization_id,
+            user_email=payload.user_email,
+            role=payload.role,
+        )
+        db.add(member)
+    else:
+        member.role = payload.role
+    db.commit()
+    db.refresh(member)
+    write_audit_log(
+        db,
+        current_user,
+        "organization_member.upsert",
+        "organization_member",
+        str(member.id),
+        {"organization_id": payload.organization_id, "user_email": payload.user_email, "role": payload.role},
+    )
+    return {
+        "id": member.id,
+        "organization_id": member.organization_id,
+        "user_email": member.user_email,
+        "role": member.role,
+    }
+
+
+@router.get("/organization-members")
+def list_organization_members(
+    organization_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "platform_admin", "org_admin", "coordinator")),
+):
+    rows = (
+        db.query(OrganizationMember)
+        .filter(OrganizationMember.organization_id == organization_id)
+        .order_by(OrganizationMember.created_at.desc())
+        .all()
+    )
+    return [
+        {
+            "id": row.id,
+            "organization_id": row.organization_id,
+            "user_email": row.user_email,
+            "role": row.role,
+            "created_at": row.created_at.isoformat(),
+        }
+        for row in rows
+    ]

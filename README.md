@@ -91,11 +91,22 @@ Authorization: Bearer <token>
 - `POST /api/connectors/whatsapp/webhook` native WhatsApp webhook receiver
 - `POST /api/connectors/slack/events` Slack Events API receiver (url verification + signed events)
 - `POST /api/connectors/google/search` Google source scan and ingest
+- `POST /api/connectors/reddit/search` Reddit source scan and ingest
+- `POST /api/connectors/youtube/search` YouTube source scan and ingest
+- `POST /api/connectors/news/search` News source scan and ingest
+- `POST /api/connectors/blogs/search` Blog source scan and ingest
 - `POST /api/connectors/scan-all` scan all supported social platforms and ingest generated mentions
 - `GET /api/connectors/platforms` list supported social sources
 - `GET /api/monitoring/mentions` recent analyzed mentions
 - `GET /api/monitoring/alerts` harmful mention alerts
 - `GET /api/monitoring/spread-analysis?keyword=<kw>&hours=<n>` first-spread timeline + mitigation suggestions
+- `GET /api/monitoring/counter-attack-plan?keyword=<kw>&hours=<n>` response plan with message/campaign suggestions
+- `GET /api/monitoring/executive-overview` executive KPI snapshot
+- `GET /api/monitoring/narrative-map` narrative map dataset
+- `GET /api/monitoring/coordinated-campaigns` repeated-content coordination signals
+- `GET /api/monitoring/influence-network` influence network nodes/edges
+- `GET /api/monitoring/counter-messaging-performance?campaign_id=<id>` before/after campaign sentiment impact
+- `GET /api/monitoring/assistant/query?q=<question>` assistant-style operational answer
 - `GET /api/monitoring/stream?token=<jwt>` SSE live event stream
 - `GET /api/monitoring/alerts/export.csv` CSV export for harmful alerts
 - `GET /api/monitoring/trends` topic/platform trend aggregates
@@ -108,6 +119,9 @@ Authorization: Bearer <token>
 - `POST /api/campaigns/{campaign_id}/outreach` attach KOL outreach list
 - `GET /api/campaigns/{campaign_id}/outreach` list outreach tasks
 - `PATCH /api/campaigns/outreach/{task_id}` update outreach status
+- `GET /api/reports/daily` JSON daily intelligence report
+- `GET /api/reports/daily.pdf` PDF daily intelligence report
+- `GET /api/reports/daily.pptx` PowerPoint daily intelligence report
 
 ### Queue and DLQ
 
@@ -136,6 +150,7 @@ Authorization: Bearer <token>
 - Configure Slack (`SLACK_WEBHOOK_URL`, `SLACK_SIGNING_SECRET`, optional `SLACK_VERIFICATION_TOKEN`) for outbound alerts and signed inbound Slack events.
 - Configure `SLACK_WEBHOOK_URL` and `CRM_WEBHOOK_URL` to activate external outbound integrations.
 - Configure `GOOGLE_CSE_API_KEY` and `GOOGLE_CSE_CX` to enable Google source scanning.
+- Configure `YOUTUBE_API_KEY` to enable YouTube source scanning.
 - Set `APP_BASE_URL` so Slack alerts include one-click dashboard links.
 - Optional severity routing: set `SLACK_CRITICAL_WEBHOOK_URL` and tune `SLACK_ALERT_THRESHOLD` / `SLACK_CRITICAL_THRESHOLD`.
 

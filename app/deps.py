@@ -70,7 +70,10 @@ def get_current_user(
 
 def require_roles(*roles: str):
     def role_checker(current_user: User | AuthUser = Depends(get_current_user)) -> User | AuthUser:
-        if current_user.role not in roles:
+        accepted = set(roles)
+        if "admin" in accepted:
+            accepted.update({"platform_admin", "org_admin"})
+        if current_user.role not in accepted:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Insufficient permissions")
         return current_user
 

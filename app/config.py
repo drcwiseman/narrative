@@ -27,6 +27,7 @@ class Settings:
     whatsapp_webhook_verify_token: str = os.getenv("WHATSAPP_WEBHOOK_VERIFY_TOKEN", "")
     google_cse_api_key: str = os.getenv("GOOGLE_CSE_API_KEY", "")
     google_cse_cx: str = os.getenv("GOOGLE_CSE_CX", "")
+    youtube_api_key: str = os.getenv("YOUTUBE_API_KEY", "")
 
 
 settings = Settings()

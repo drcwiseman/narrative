@@ -211,3 +211,86 @@ class IntegrationCredential(Base):
     verify_token: Mapped[str] = mapped_column(String(512), default="")
     is_active: Mapped[int] = mapped_column(Integer, default=1, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Organization(Base):
+    __tablename__ = "organizations"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    sector: Mapped[str] = mapped_column(String(128), default="general")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class OrganizationMember(Base):
+    __tablename__ = "organization_members"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    organization_id: Mapped[int] = mapped_column(Integer, index=True)
+    user_email: Mapped[str] = mapped_column(String(255), index=True)
+    role: Mapped[str] = mapped_column(String(64), default="analyst", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class Narrative(Base):
+    __tablename__ = "narratives"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    name: Mapped[str] = mapped_column(String(255), index=True)
+    topic: Mapped[str] = mapped_column(String(128), index=True)
+    constituency: Mapped[str] = mapped_column(String(128), index=True)
+    status: Mapped[str] = mapped_column(String(64), default="emerging", index=True)
+    first_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_seen: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+    mention_count: Mapped[int] = mapped_column(Integer, default=0)
+    risk_score: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class NarrativeEvent(Base):
+    __tablename__ = "narrative_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    narrative_id: Mapped[int] = mapped_column(Integer, index=True)
+    stage: Mapped[str] = mapped_column(String(64), index=True)
+    label: Mapped[str] = mapped_column(String(255))
+    metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    occurred_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class Claim(Base):
+    __tablename__ = "claims"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    narrative_id: Mapped[int] = mapped_column(Integer, index=True, default=0)
+    mention_id: Mapped[int] = mapped_column(Integer, index=True, default=0)
+    text: Mapped[str] = mapped_column(Text)
+    risk_score: Mapped[float] = mapped_column(Float, default=0.0, index=True)
+    status: Mapped[str] = mapped_column(String(64), default="under_review", index=True)
+    reason: Mapped[str] = mapped_column(String(255), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)
+
+
+class EmotionSignal(Base):
+    __tablename__ = "emotion_signals"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    mention_id: Mapped[int] = mapped_column(Integer, unique=True, index=True)
+    anger: Mapped[float] = mapped_column(Float, default=0.0)
+    fear: Mapped[float] = mapped_column(Float, default=0.0)
+    hope: Mapped[float] = mapped_column(Float, default=0.0)
+    confusion: Mapped[float] = mapped_column(Float, default=0.0)
+    trust: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class ReportRun(Base):
+    __tablename__ = "report_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    owner_email: Mapped[str] = mapped_column(String(255), index=True)
+    report_type: Mapped[str] = mapped_column(String(64), index=True)
+    format: Mapped[str] = mapped_column(String(32), index=True)
+    filters_json: Mapped[str] = mapped_column(Text, default="{}")
+    generated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, index=True)

@@ -205,6 +205,8 @@
           <input name="user_id" type="number" placeholder="User ID" required />
           <select name="role" required>
             <option value="admin">admin</option>
+            <option value="platform_admin">platform_admin</option>
+            <option value="org_admin">org_admin</option>
             <option value="coordinator">coordinator</option>
             <option value="analyst">analyst</option>
             <option value="outreach">outreach</option>
@@ -245,6 +247,14 @@
 
     <div class="grid">
       <section class="card">
+        <h2>Executive Overview</h2>
+        <div class="toolbar">
+          <button id="refreshExecutiveOverview">Refresh KPIs</button>
+        </div>
+        <div id="executiveOverview"></div>
+      </section>
+
+      <section class="card">
         <h2>Live Mention Feed</h2>
         <div id="mentions"></div>
       </section>
@@ -258,6 +268,16 @@
           <button id="refreshKols">Refresh KOLs</button>
         </div>
         <div id="kols"></div>
+      </section>
+
+      <section class="card">
+        <h2>Narrative Intelligence</h2>
+        <div class="toolbar">
+          <button id="loadNarrativeMap">Narrative Map</button>
+          <button id="loadCoordinatedSignals">Coordination Signals</button>
+          <button id="loadInfluenceNetwork">Influence Network</button>
+        </div>
+        <div id="narrativeIntelResult"></div>
       </section>
 
       <section class="card">
@@ -280,6 +300,46 @@
         </form>
         <div id="spreadAnalysisResult"></div>
       </section>
+
+      <section class="card">
+        <h2>Counter-Attack Plan</h2>
+        <form id="counterAttackForm">
+          <input name="keyword" placeholder="Keyword/claim to counter (required)" required />
+          <input name="topic" placeholder="Optional topic (elections, security, health...)" />
+          <input name="constituency" placeholder="Optional constituency" />
+          <input name="hours" type="number" min="1" max="336" value="72" />
+          <button type="submit">Generate Plan</button>
+        </form>
+        <div id="counterAttackResult"></div>
+      </section>
+
+      <section class="card">
+        <h2>Campaign Impact</h2>
+        <form id="campaignImpactForm">
+          <input name="campaign_id" type="number" placeholder="Campaign ID" required />
+          <button type="submit">Measure Counter-Messaging Performance</button>
+        </form>
+        <div id="campaignImpactResult"></div>
+      </section>
+
+      <section class="card">
+        <h2>AI Assistant</h2>
+        <form id="assistantQueryForm">
+          <input name="q" placeholder="Ask: why is fuel shortage trending?" required />
+          <button type="submit">Ask Assistant</button>
+        </form>
+        <div id="assistantResult"></div>
+      </section>
+
+      <section class="card">
+        <h2>Reports</h2>
+        <div class="toolbar">
+          <button id="downloadDailyJson">Daily JSON</button>
+          <button id="downloadDailyPdf">Daily PDF</button>
+          <button id="downloadDailyPpt">Daily PPT</button>
+        </div>
+        <small id="reportsResult"></small>
+      </section>
     </div>
 
     <script>
@@ -287,9 +347,11 @@
       if (!token) window.location.replace("/login");
 
       const identityEl = document.getElementById("identity");
+      const executiveOverviewEl = document.getElementById("executiveOverview");
       const mentionsEl = document.getElementById("mentions");
       const alertsEl = document.getElementById("alerts");
       const kolsEl = document.getElementById("kols");
+      const narrativeIntelResultEl = document.getElementById("narrativeIntelResult");
       const campaignsListEl = document.getElementById("campaignsList");
       const outreachListEl = document.getElementById("outreachList");
       const scanSectionEl = document.getElementById("scanSection");
@@ -319,6 +381,10 @@
       const rescoreResultEl = document.getElementById("rescoreResult");
       const refreshAccountsButton = document.getElementById("refreshAccounts");
       const spreadAnalysisResultEl = document.getElementById("spreadAnalysisResult");
+      const counterAttackResultEl = document.getElementById("counterAttackResult");
+      const campaignImpactResultEl = document.getElementById("campaignImpactResult");
+      const assistantResultEl = document.getElementById("assistantResult");
+      const reportsResultEl = document.getElementById("reportsResult");
       let currentRole = "";
       let stream = null;
 
@@ -361,6 +427,20 @@
             <small>topic=${esc(row.topic)} sentiment=${row.sentiment_score} harmful=${row.harmful_claim_score}</small>
           </div>
         `).join("");
+      }
+
+      async function loadExecutiveOverview() {
+        const res = await api("/api/monitoring/executive-overview");
+        const data = await res.json();
+        const emotion = data.emotion_mix || {};
+        executiveOverviewEl.innerHTML = `
+          <div class="item"><b>Active Narratives:</b> ${data.active_narratives}</div>
+          <div class="item"><b>Mentions:</b> ${data.mentions}</div>
+          <div class="item"><b>Misinformation Alerts:</b> ${data.misinformation_alerts}</div>
+          <div class="item"><b>Influential Voices:</b> ${data.influential_voices}</div>
+          <div class="item"><b>Average Sentiment:</b> ${data.average_sentiment}</div>
+          <div class="item"><small>Emotions: anger=${emotion.anger} fear=${emotion.fear} hope=${emotion.hope} confusion=${emotion.confusion} trust=${emotion.trust}</small></div>
+        `;
       }
 
       async function loadAlerts() {
@@ -488,6 +568,84 @@
         `;
       }
 
+      async function runCounterAttackPlan(payload) {
+        const params = new URLSearchParams();
+        params.set("keyword", payload.keyword);
+        if (payload.topic) params.set("topic", payload.topic);
+        if (payload.constituency) params.set("constituency", payload.constituency);
+        params.set("hours", String(payload.hours || 72));
+        const res = await api(`/api/monitoring/counter-attack-plan?${params.toString()}`);
+        const data = await res.json();
+        const plan = data.plan || {};
+        const stats = plan.stats || {};
+        counterAttackResultEl.innerHTML = `
+          <div class="item">
+            <b>Urgency:</b> ${esc(plan.urgency || "n/a")}
+            <div><small>${esc(plan.response_objective || "")}</small></div>
+          </div>
+          <div class="item">
+            <b>Stats:</b> mentions=${esc(stats.mentions || 0)} | harmful_ratio=${esc(stats.harmful_ratio || 0)} | topic=${esc(stats.dominant_topic || "n/a")} | platform=${esc(stats.dominant_platform || "n/a")}
+          </div>
+          <div class="item">
+            <b>Message Pillars</b>
+            <div><small>${(plan.message_pillars || []).map(esc).join(" | ")}</small></div>
+          </div>
+          <div class="item">
+            <b>Sample Counter Messages</b>
+            <div><small>${(plan.sample_counter_messages || []).map(esc).join(" | ")}</small></div>
+          </div>
+          <div class="item">
+            <b>Channels Priority</b>
+            <div><small>${(plan.channels_priority || []).map(esc).join(", ")}</small></div>
+          </div>
+          <div class="item">
+            <b>KOL Targets</b>
+            <div><small>${(plan.kol_targets || []).map((k) => `${esc(k.handle)}(${esc(k.tier)})`).join(", ") || "None"}</small></div>
+          </div>
+          <div class="item">
+            <b>Execution Checklist</b>
+            <div><small>${(plan.execution_checklist || []).map(esc).join(" | ")}</small></div>
+          </div>
+        `;
+      }
+
+      async function loadNarrativeMap() {
+        const res = await api("/api/monitoring/narrative-map");
+        const rows = await res.json();
+        narrativeIntelResultEl.innerHTML = rows.length ? rows.slice(0, 12).map((row) => `
+          <div class="item">
+            <b>${esc(row.label)}</b>
+            <span class="pill">volume=${row.volume}</span>
+            <span class="pill ${row.risk_score >= 0.6 ? "harmful" : ""}">risk=${row.risk_score}</span>
+            <div><small>topic=${esc(row.topic)} constituency=${esc(row.constituency)} status=${esc(row.status)}</small></div>
+          </div>
+        `).join("") : "<small>No narrative map data yet.</small>";
+      }
+
+      async function loadCoordinatedSignals() {
+        const res = await api("/api/monitoring/coordinated-campaigns");
+        const rows = await res.json();
+        narrativeIntelResultEl.innerHTML = rows.length ? rows.map((row) => `
+          <div class="item">
+            <b>${esc(row.platform)}</b>
+            <span class="pill ${row.risk === "high" ? "harmful" : ""}">${esc(row.risk)}</span>
+            <div><small>repeat_count=${row.repeat_count}</small></div>
+            <div>${esc(row.signature)}</div>
+          </div>
+        `).join("") : "<small>No coordinated campaign signals detected.</small>";
+      }
+
+      async function loadInfluenceNetwork() {
+        const res = await api("/api/monitoring/influence-network");
+        const data = await res.json();
+        const nodes = data.nodes || [];
+        const edges = data.edges || [];
+        narrativeIntelResultEl.innerHTML = `
+          <div class="item"><b>Top Nodes:</b> ${nodes.slice(0, 10).map((n) => `${esc(n.id)}(${n.weight})`).join(", ") || "none"}</div>
+          <div class="item"><b>Edges:</b> ${edges.slice(0, 10).map((e) => `${esc(e.source)}→${esc(e.target)}`).join(", ") || "none"}</div>
+        `;
+      }
+
       async function loadAuditLogs() {
         const res = await api("/api/admin/audit-logs");
         const data = await res.json();
@@ -585,7 +743,7 @@
       }
 
       async function refreshAll() {
-        await Promise.all([loadMentions(), loadAlerts(), loadKols(), loadCampaigns()]);
+        await Promise.all([loadExecutiveOverview(), loadMentions(), loadAlerts(), loadKols(), loadCampaigns()]);
       }
 
       function connectStream() {
@@ -693,6 +851,18 @@
       refreshKolsButton.addEventListener("click", () => {
         loadKols().catch((err) => alert(err.message));
       });
+      document.getElementById("refreshExecutiveOverview").addEventListener("click", () => {
+        loadExecutiveOverview().catch((err) => alert(err.message));
+      });
+      document.getElementById("loadNarrativeMap").addEventListener("click", () => {
+        loadNarrativeMap().catch((err) => alert(err.message));
+      });
+      document.getElementById("loadCoordinatedSignals").addEventListener("click", () => {
+        loadCoordinatedSignals().catch((err) => alert(err.message));
+      });
+      document.getElementById("loadInfluenceNetwork").addEventListener("click", () => {
+        loadInfluenceNetwork().catch((err) => alert(err.message));
+      });
 
       refreshAccountsButton.addEventListener("click", () => {
         loadConnectedAccounts().catch((err) => alert(err.message));
@@ -727,6 +897,89 @@
           const payload = Object.fromEntries(new FormData(e.target).entries());
           payload.hours = Number(payload.hours || 168);
           await runSpreadAnalysis(payload);
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("counterAttackForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          const payload = Object.fromEntries(new FormData(e.target).entries());
+          payload.hours = Number(payload.hours || 72);
+          await runCounterAttackPlan(payload);
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("campaignImpactForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          const payload = Object.fromEntries(new FormData(e.target).entries());
+          const res = await api(`/api/monitoring/counter-messaging-performance?campaign_id=${Number(payload.campaign_id)}`);
+          const data = await res.json();
+          campaignImpactResultEl.innerHTML = `
+            <div class="item"><b>${esc(data.campaign_name)}</b> (${esc(data.constituency)})</div>
+            <div class="item"><small>Before: sentiment=${data.before.avg_sentiment} harmful=${data.before.avg_harmful_score}</small></div>
+            <div class="item"><small>After: sentiment=${data.after.avg_sentiment} harmful=${data.after.avg_harmful_score}</small></div>
+            <div class="item"><small>Delta: sentiment=${data.delta.sentiment_change} harmful=${data.delta.harmful_change}</small></div>
+          `;
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("assistantQueryForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          const query = new FormData(e.target).get("q");
+          const res = await api(`/api/monitoring/assistant/query?q=${encodeURIComponent(query)}`);
+          const data = await res.json();
+          assistantResultEl.innerHTML = `
+            <div class="item">${esc(data.answer || "")}</div>
+            <div class="item"><small>${(data.insights || []).map((i) => `${esc(i.metric)}=${esc(i.value)}`).join(" | ")}</small></div>
+          `;
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("downloadDailyJson").addEventListener("click", async () => {
+        try {
+          const res = await api("/api/reports/daily");
+          const data = await res.json();
+          reportsResultEl.textContent = `Daily report generated: mentions=${data.mentions}, harmful=${data.harmful_alerts}`;
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("downloadDailyPdf").addEventListener("click", async () => {
+        try {
+          const res = await api("/api/reports/daily.pdf");
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "daily-intelligence-report.pdf";
+          a.click();
+          URL.revokeObjectURL(url);
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("downloadDailyPpt").addEventListener("click", async () => {
+        try {
+          const res = await api("/api/reports/daily.pptx");
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "daily-intelligence-report.pptx";
+          a.click();
+          URL.revokeObjectURL(url);
         } catch (err) {
           alert(err.message);
         }
