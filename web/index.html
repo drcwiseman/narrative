@@ -5,29 +5,108 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Narrative Dashboard</title>
     <style>
-      :root { font-family: Arial, sans-serif; color-scheme: dark; }
-      body { margin: 0; padding: 1rem; background: #111827; color: #e5e7eb; }
-      h1, h2 { margin: 0 0 0.75rem; }
-      .header { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+      :root {
+        font-family: Inter, "Segoe UI", Arial, sans-serif;
+        color-scheme: dark;
+        --bg: #0b1220;
+        --panel: #121a2b;
+        --panel-soft: #0f1728;
+        --border: #23304a;
+        --text: #e5e7eb;
+        --muted: #9ca3af;
+        --brand: #3b82f6;
+      }
+      body { margin: 0; background: radial-gradient(circle at top, #12203a 0%, var(--bg) 45%); color: var(--text); }
+      h1, h2 { margin: 0 0 0.75rem; letter-spacing: 0.1px; }
+      .app-layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: 100vh; }
+      .sidebar {
+        background: rgba(10, 16, 30, 0.92);
+        border-right: 1px solid var(--border);
+        padding: 1.2rem 0.9rem;
+        position: sticky;
+        top: 0;
+        height: 100vh;
+      }
+      .sidebar h3 { margin: 0 0 1rem; font-size: 1rem; color: #f8fafc; }
+      .nav-group { margin-bottom: 1rem; }
+      .nav-label { display: block; color: var(--muted); font-size: 0.76rem; text-transform: uppercase; margin: 0.7rem 0 0.35rem; }
+      .sidebar a {
+        display: block;
+        color: #dbeafe;
+        text-decoration: none;
+        padding: 0.45rem 0.55rem;
+        border-radius: 8px;
+        font-size: 0.9rem;
+      }
+      .sidebar a:hover { background: rgba(59, 130, 246, 0.16); }
+      .main-content { padding: 1rem 1.2rem 1.6rem; }
+      .header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 1rem;
+        margin-bottom: 0.5rem;
+        padding: 0.9rem 1rem;
+        background: rgba(18, 26, 43, 0.82);
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        backdrop-filter: blur(4px);
+      }
       .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 1rem; margin-top: 1rem; }
-      .card { background: #1f2937; border: 1px solid #374151; border-radius: 10px; padding: 1rem; }
-      .item { border-bottom: 1px solid #374151; padding: 0.5rem 0; }
+      .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1rem; box-shadow: 0 10px 25px rgba(0,0,0,0.2); }
+      .item { border-bottom: 1px solid var(--border); padding: 0.55rem 0; }
       .item:last-child { border-bottom: 0; }
-      .pill { display: inline-block; margin-left: 0.5rem; padding: 0.12rem 0.45rem; border-radius: 999px; font-size: 0.8rem; background: #374151; }
+      .pill { display: inline-block; margin-left: 0.5rem; padding: 0.12rem 0.45rem; border-radius: 999px; font-size: 0.78rem; background: #334155; }
       .harmful { background: #7f1d1d; }
       .connected { background: #065f46; }
       .disconnected { background: #7f1d1d; }
-      input, button, textarea, select { width: 100%; margin: 0.25rem 0 0.5rem; background: #111827; color: #e5e7eb; border: 1px solid #4b5563; border-radius: 6px; padding: 0.45rem; }
-      button { cursor: pointer; background: #2563eb; border: 0; }
-      small { color: #9ca3af; }
+      input, button, textarea, select { width: 100%; margin: 0.25rem 0 0.5rem; background: var(--panel-soft); color: var(--text); border: 1px solid #334155; border-radius: 8px; padding: 0.5rem; }
+      button { cursor: pointer; background: linear-gradient(135deg, var(--brand), #1d4ed8); border: 0; color: #eef2ff; font-weight: 600; }
+      small { color: var(--muted); }
       .hidden { display: none; }
       .row { display: flex; gap: 0.5rem; align-items: center; }
       .row button { width: auto; margin: 0; }
       .toolbar { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
       .toolbar button { width: auto; }
+      @media (max-width: 980px) {
+        .app-layout { grid-template-columns: 1fr; }
+        .sidebar { position: static; height: auto; border-right: 0; border-bottom: 1px solid var(--border); }
+      }
     </style>
   </head>
   <body>
+    <div class="app-layout">
+      <aside class="sidebar">
+        <h3>Narrative Intelligence</h3>
+        <div class="nav-group">
+          <span class="nav-label">Overview</span>
+          <a href="#executiveOverview">Executive Overview</a>
+          <a href="#accountsList">Connected Accounts</a>
+          <a href="#mentions">Live Feed</a>
+          <a href="#alerts">Harmful Alerts</a>
+        </div>
+        <div class="nav-group">
+          <span class="nav-label">Monitoring</span>
+          <a href="#scanSection">Scan Platforms</a>
+          <a href="#googleScanSection">Google Source Scan</a>
+          <a href="#spreadAnalysisResult">Spread Analysis</a>
+          <a href="#counterAttackResult">Counter-Attack Plan</a>
+        </div>
+        <div class="nav-group">
+          <span class="nav-label">Influence</span>
+          <a href="#kols">KOL Leaderboard</a>
+          <a href="#narrativeIntelResult">Narrative Intelligence</a>
+          <a href="#campaignImpactResult">Campaign Impact</a>
+        </div>
+        <div class="nav-group">
+          <span class="nav-label">Operations</span>
+          <a href="#campaignsList">Campaigns</a>
+          <a href="#outreachList">Outreach Tasks</a>
+          <a href="#assistantResult">AI Assistant</a>
+          <a href="#auditLogsList">Audit Logs</a>
+        </div>
+      </aside>
+      <main class="main-content">
     <div class="header">
       <div>
         <h1>Narrative Dashboard</h1>
@@ -340,6 +419,8 @@
         </div>
         <small id="reportsResult"></small>
       </section>
+    </div>
+      </main>
     </div>
 
     <script>
