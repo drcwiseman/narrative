@@ -8,8 +8,8 @@ from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import require_roles
-from app.models import AlertEndpoint, AuditLog, ConnectorKey, User
-from app.schemas import AlertEndpointCreate, ConnectorKeyCreate, DetectionRulesUpdate
+from app.models import AlertEndpoint, AuditLog, ConnectorKey, IntegrationCredential, User
+from app.schemas import AlertEndpointCreate, ConnectorKeyCreate, DetectionRulesUpdate, IntegrationCredentialUpsert
 from app.services.notifications import dispatch_harmful_alerts
 from app.security import hash_connector_token
 from app.services.audit import write_audit_log
@@ -268,3 +268,65 @@ def save_detection_rules(
     rules = update_detection_rules(db, payload.model_dump())
     write_audit_log(db, current_user, "detection_rules.update", "detection_rules")
     return rules
+
+
+@router.get("/integration-credentials")
+def list_integration_credentials(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "coordinator")),
+):
+    rows = db.query(IntegrationCredential).order_by(IntegrationCredential.platform.asc()).all()
+    response = [
+        {
+            "id": row.id,
+            "platform": row.platform,
+            "is_active": bool(row.is_active),
+            "has_webhook_secret": bool(row.webhook_secret),
+            "has_verify_token": bool(row.verify_token),
+            "secret_preview": f"{row.webhook_secret[:4]}..." if row.webhook_secret else "",
+            "updated_at": row.updated_at.isoformat(),
+        }
+        for row in rows
+    ]
+    write_audit_log(db, current_user, "integration_credentials.list", "integration_credentials")
+    return response
+
+
+@router.put("/integration-credentials")
+def upsert_integration_credential(
+    payload: IntegrationCredentialUpsert,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin")),
+):
+    platform = payload.platform.strip().lower()
+    if platform not in {"x", "facebook"}:
+        raise HTTPException(status_code=400, detail="Only x and facebook are currently supported here")
+
+    row = db.query(IntegrationCredential).filter(IntegrationCredential.platform == platform).first()
+    if row is None:
+        row = IntegrationCredential(platform=platform)
+        db.add(row)
+
+    if payload.webhook_secret:
+        row.webhook_secret = payload.webhook_secret.strip()
+    if payload.verify_token:
+        row.verify_token = payload.verify_token.strip()
+    row.is_active = 1 if payload.is_active else 0
+    db.commit()
+    db.refresh(row)
+    write_audit_log(
+        db,
+        current_user,
+        "integration_credentials.upsert",
+        "integration_credentials",
+        str(row.id),
+        {"platform": row.platform, "is_active": bool(row.is_active)},
+    )
+    return {
+        "id": row.id,
+        "platform": row.platform,
+        "is_active": bool(row.is_active),
+        "has_webhook_secret": bool(row.webhook_secret),
+        "has_verify_token": bool(row.verify_token),
+        "secret_preview": f"{row.webhook_secret[:4]}..." if row.webhook_secret else "",
+    }

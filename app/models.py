@@ -200,3 +200,14 @@ class DetectionRuleConfig(Base):
     default_harmful_threshold: Mapped[float] = mapped_column(Float, default=0.5)
     platform_harmful_thresholds_json: Mapped[str] = mapped_column(Text, default="{}")
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class IntegrationCredential(Base):
+    __tablename__ = "integration_credentials"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    platform: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    webhook_secret: Mapped[str] = mapped_column(String(512), default="")
+    verify_token: Mapped[str] = mapped_column(String(512), default="")
+    is_active: Mapped[int] = mapped_column(Integer, default=1, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

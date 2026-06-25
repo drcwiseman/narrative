@@ -13,7 +13,7 @@ from sqlalchemy.orm import Session
 from app.config import settings
 from app.database import get_db
 from app.deps import require_roles
-from app.models import ConnectorKey, IdempotencyRecord
+from app.models import ConnectorKey, IdempotencyRecord, IntegrationCredential
 from app.routers.ingest import ingest_mention_internal
 from app.services.queue import enqueue_job
 from app.schemas import ConnectorScanRequest, MentionCreate
@@ -50,10 +50,10 @@ def _resolve_header(headers: dict[str, str], *names: str) -> str | None:
     return None
 
 
-def _verify_x_request_signature(raw_body: bytes, signature_header: str | None) -> bool:
-    if not settings.x_webhook_secret or not signature_header:
+def _verify_x_request_signature(raw_body: bytes, signature_header: str | None, secret: str) -> bool:
+    if not secret or not signature_header:
         return False
-    expected = "sha256=" + _hmac_sha256_base64(settings.x_webhook_secret, raw_body)
+    expected = "sha256=" + _hmac_sha256_base64(secret, raw_body)
     return hmac.compare_digest(signature_header, expected)
 
 
@@ -62,6 +62,30 @@ def _verify_meta_signature(raw_body: bytes, signature_header: str | None, secret
         return False
     expected = "sha256=" + _hmac_sha256_hex(secret, raw_body)
     return hmac.compare_digest(signature_header, expected)
+
+
+def _platform_credential(db: Session, platform: str) -> dict[str, str]:
+    platform = platform.lower()
+    row = (
+        db.query(IntegrationCredential)
+        .filter(IntegrationCredential.platform == platform, IntegrationCredential.is_active == 1)
+        .first()
+    )
+    if row:
+        return {"webhook_secret": row.webhook_secret or "", "verify_token": row.verify_token or ""}
+    fallback = {
+        "x": {"webhook_secret": settings.x_webhook_secret, "verify_token": ""},
+        "facebook": {
+            "webhook_secret": settings.facebook_webhook_secret,
+            "verify_token": settings.facebook_webhook_verify_token,
+        },
+        "whatsapp": {
+            "webhook_secret": settings.whatsapp_webhook_secret,
+            "verify_token": settings.whatsapp_webhook_verify_token,
+        },
+        "slack": {"webhook_secret": settings.slack_signing_secret, "verify_token": settings.slack_verification_token},
+    }
+    return fallback.get(platform, {"webhook_secret": "", "verify_token": ""})
 
 
 def _verify_slack_signature(
@@ -252,6 +276,10 @@ def list_connected_accounts(
     current_user: User = Depends(require_roles("admin", "coordinator", "analyst", "outreach")),
 ):
     keys = db.query(ConnectorKey).filter(ConnectorKey.is_active == 1).all()
+    x_cred = _platform_credential(db, "x")
+    facebook_cred = _platform_credential(db, "facebook")
+    whatsapp_cred = _platform_credential(db, "whatsapp")
+    slack_cred = _platform_credential(db, "slack")
     platform_key_counts: dict[str, int] = {}
     for row in keys:
         platform = (row.platform or "").lower()
@@ -260,31 +288,31 @@ def list_connected_accounts(
     accounts = [
         {
             "platform": "x",
-            "connected": bool(settings.x_webhook_secret) and platform_key_counts.get("x", 0) > 0,
-            "mode": "webhook+connector-key",
+            "connected": bool(x_cred["webhook_secret"]),
+            "mode": "webhook (connector-key optional)",
             "active_connector_keys": platform_key_counts.get("x", 0),
-            "webhook_configured": bool(settings.x_webhook_secret),
+            "webhook_configured": bool(x_cred["webhook_secret"]),
         },
         {
             "platform": "facebook",
-            "connected": bool(settings.facebook_webhook_secret) and bool(settings.facebook_webhook_verify_token),
+            "connected": bool(facebook_cred["webhook_secret"]) and bool(facebook_cred["verify_token"]),
             "mode": "webhook",
             "active_connector_keys": platform_key_counts.get("facebook", 0),
-            "webhook_configured": bool(settings.facebook_webhook_secret),
+            "webhook_configured": bool(facebook_cred["webhook_secret"]),
         },
         {
             "platform": "whatsapp",
-            "connected": bool(settings.whatsapp_webhook_secret) and bool(settings.whatsapp_webhook_verify_token),
+            "connected": bool(whatsapp_cred["webhook_secret"]) and bool(whatsapp_cred["verify_token"]),
             "mode": "webhook",
             "active_connector_keys": platform_key_counts.get("whatsapp", 0),
-            "webhook_configured": bool(settings.whatsapp_webhook_secret),
+            "webhook_configured": bool(whatsapp_cred["webhook_secret"]),
         },
         {
             "platform": "slack",
-            "connected": bool(settings.slack_signing_secret) and bool(settings.slack_webhook_url),
+            "connected": bool(slack_cred["webhook_secret"]) and bool(settings.slack_webhook_url),
             "mode": "events+alerts",
             "active_connector_keys": platform_key_counts.get("slack", 0),
-            "events_configured": bool(settings.slack_signing_secret),
+            "events_configured": bool(slack_cred["webhook_secret"]),
             "alerts_configured": bool(settings.slack_webhook_url),
         },
         {
@@ -352,14 +380,16 @@ def _verify_platform_secret(secret: str | None, expected: str, platform: str) ->
 
 @router.post("/x/webhook")
 async def ingest_x_webhook(request: Request, db: Session = Depends(get_db)):
+    credential = _platform_credential(db, "x")
+    webhook_secret = credential["webhook_secret"]
     raw_body = await request.body()
     headers = {k.lower(): v for k, v in request.headers.items()}
     signature_header = _resolve_header(headers, "x-twitter-webhooks-signature")
     fallback_secret = _resolve_header(headers, "x-webhook-secret")
 
-    signature_ok = _verify_x_request_signature(raw_body, signature_header)
+    signature_ok = _verify_x_request_signature(raw_body, signature_header, webhook_secret)
     if not signature_ok:
-        _verify_platform_secret(fallback_secret, settings.x_webhook_secret, "x")
+        _verify_platform_secret(fallback_secret, webhook_secret, "x")
 
     payload = await request.json()
     mentions = _parse_x_mentions(payload)
@@ -370,15 +400,16 @@ async def ingest_x_webhook(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/x/webhook")
-def verify_x_webhook_crc(crc_token: str = Query(...)):
+def verify_x_webhook_crc(crc_token: str = Query(...), db: Session = Depends(get_db)):
     """
     X webhook CRC check endpoint.
     X sends a GET with ?crc_token=... and expects:
     {"response_token":"sha256=<base64_hmac_sha256>"}
     """
-    if not settings.x_webhook_secret:
+    webhook_secret = _platform_credential(db, "x")["webhook_secret"]
+    if not webhook_secret:
         raise HTTPException(status_code=503, detail="X_WEBHOOK_SECRET not configured")
-    response_token = "sha256=" + _hmac_sha256_base64(settings.x_webhook_secret, crc_token.encode("utf-8"))
+    response_token = "sha256=" + _hmac_sha256_base64(webhook_secret, crc_token.encode("utf-8"))
     return {"response_token": response_token}
 
 
@@ -387,8 +418,10 @@ def verify_facebook_webhook(
     hub_mode: str = Query(default="", alias="hub.mode"),
     hub_verify_token: str = Query(default="", alias="hub.verify_token"),
     hub_challenge: str = Query(default="", alias="hub.challenge"),
+    db: Session = Depends(get_db),
 ):
-    expected_token = settings.facebook_webhook_verify_token or settings.facebook_webhook_secret
+    credential = _platform_credential(db, "facebook")
+    expected_token = credential["verify_token"] or credential["webhook_secret"]
     if not expected_token:
         raise HTTPException(status_code=503, detail="FACEBOOK_WEBHOOK_VERIFY_TOKEN not configured")
     if hub_mode != "subscribe" or hub_verify_token != expected_token:
@@ -398,14 +431,16 @@ def verify_facebook_webhook(
 
 @router.post("/facebook/webhook")
 async def ingest_facebook_webhook(request: Request, db: Session = Depends(get_db)):
+    credential = _platform_credential(db, "facebook")
+    webhook_secret = credential["webhook_secret"]
     raw_body = await request.body()
     headers = {k.lower(): v for k, v in request.headers.items()}
     signature_header = _resolve_header(headers, "x-hub-signature-256")
     fallback_secret = _resolve_header(headers, "x-webhook-secret", "x-facebook-webhook-secret")
 
-    signature_ok = _verify_meta_signature(raw_body, signature_header, settings.facebook_webhook_secret)
+    signature_ok = _verify_meta_signature(raw_body, signature_header, webhook_secret)
     if not signature_ok:
-        _verify_platform_secret(fallback_secret, settings.facebook_webhook_secret, "facebook")
+        _verify_platform_secret(fallback_secret, webhook_secret, "facebook")
 
     payload = await request.json()
     mentions = _parse_facebook_mentions(payload)

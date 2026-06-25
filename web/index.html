@@ -136,6 +136,27 @@
         <div id="connectorKeysList"></div>
       </section>
 
+      <section class="card hidden" id="platformConnectionsSection">
+        <h2>Platform Connections (X/Facebook)</h2>
+        <form id="upsertIntegrationCredentialForm">
+          <select name="platform" required>
+            <option value="x">x</option>
+            <option value="facebook">facebook</option>
+          </select>
+          <input name="webhook_secret" placeholder="Webhook secret (required)" required />
+          <input name="verify_token" placeholder="Verify token (facebook required, x optional)" />
+          <select name="is_active" required>
+            <option value="1">active</option>
+            <option value="0">inactive</option>
+          </select>
+          <button type="submit">Save Platform Credential</button>
+        </form>
+        <div class="toolbar">
+          <button id="loadIntegrationCredentials">Load Platform Credentials</button>
+        </div>
+        <div id="integrationCredentialsList"></div>
+      </section>
+
       <section class="card hidden" id="alertEndpointsSection">
         <h2>Alert Endpoints</h2>
         <form id="createAlertEndpointForm">
@@ -253,6 +274,8 @@
       const adminControlsEl = document.getElementById("adminControls");
       const connectorKeyResultEl = document.getElementById("connectorKeyResult");
       const connectorKeysListEl = document.getElementById("connectorKeysList");
+      const platformConnectionsSectionEl = document.getElementById("platformConnectionsSection");
+      const integrationCredentialsListEl = document.getElementById("integrationCredentialsList");
       const alertEndpointsSectionEl = document.getElementById("alertEndpointsSection");
       const alertEndpointsListEl = document.getElementById("alertEndpointsList");
       const auditSectionEl = document.getElementById("auditSection");
@@ -369,6 +392,18 @@
             <small>${esc(row.token_preview)}</small>
           </div>
         `).join("") : "<small>No connector keys yet.</small>";
+      }
+
+      async function loadIntegrationCredentials() {
+        const res = await api("/api/admin/integration-credentials");
+        const data = await res.json();
+        integrationCredentialsListEl.innerHTML = data.length ? data.map((row) => `
+          <div class="item">
+            <b>${esc(row.platform)}</b>
+            <span class="pill ${row.is_active ? "connected" : "disconnected"}">${row.is_active ? "active" : "inactive"}</span>
+            <div><small>secret=${esc(row.secret_preview || "not-set")} | verify-token=${row.has_verify_token ? "set" : "not-set"}</small></div>
+          </div>
+        `).join("") : "<small>No platform credentials saved yet.</small>";
       }
 
       async function listAlertEndpoints() {
@@ -675,6 +710,26 @@
         listConnectorKeys().catch((err) => alert(err.message));
       });
 
+      document.getElementById("upsertIntegrationCredentialForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          const payload = Object.fromEntries(new FormData(e.target).entries());
+          payload.is_active = payload.is_active === "1";
+          await api("/api/admin/integration-credentials", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          await Promise.all([loadIntegrationCredentials(), loadConnectedAccounts()]);
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("loadIntegrationCredentials").addEventListener("click", () => {
+        loadIntegrationCredentials().catch((err) => alert(err.message));
+      });
+
       document.getElementById("rotateConnectorKey").addEventListener("click", async () => {
         try {
           const keyId = Number(document.getElementById("rotateConnectorKeyId").value);
@@ -778,6 +833,7 @@
           currentRole = me.role || "";
           identityEl.textContent = `Logged in as ${me.email} (${currentRole})`;
           adminControlsEl.classList.toggle("hidden", currentRole !== "admin");
+          platformConnectionsSectionEl.classList.toggle("hidden", currentRole !== "admin");
           scanSectionEl.classList.toggle("hidden", !["admin", "coordinator", "analyst"].includes(currentRole));
           alertEndpointsSectionEl.classList.toggle("hidden", currentRole !== "admin");
           auditSectionEl.classList.toggle("hidden", currentRole !== "admin");
@@ -785,7 +841,13 @@
           detectionRulesSectionEl.classList.toggle("hidden", currentRole !== "admin");
           await Promise.all([refreshAll(), loadConnectedAccounts()]);
           if (currentRole === "admin") {
-            await Promise.all([listConnectorKeys(), listAlertEndpoints(), loadUsers(), loadDetectionRules()]);
+            await Promise.all([
+              listConnectorKeys(),
+              listAlertEndpoints(),
+              loadUsers(),
+              loadDetectionRules(),
+              loadIntegrationCredentials(),
+            ]);
           }
           connectStream();
         } catch (err) {

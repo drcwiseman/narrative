@@ -119,3 +119,10 @@ class DetectionRulesUpdate(BaseModel):
     topic_keywords: dict[str, list[str]]
     default_harmful_threshold: float = Field(ge=0, le=1, default=0.5)
     platform_harmful_thresholds: dict[str, float] = {}
+
+
+class IntegrationCredentialUpsert(BaseModel):
+    platform: str
+    webhook_secret: str = ""
+    verify_token: str = ""
+    is_active: bool = True

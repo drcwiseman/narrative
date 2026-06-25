@@ -74,6 +74,10 @@ Authorization: Bearer <token>
 - `GET /api/admin/users` (admin)
 - `PATCH /api/admin/users/{user_id}/role?role=<role>` (admin)
 - `PATCH /api/admin/users/{user_id}/active?is_active=0|1` (admin)
+- `GET /api/admin/integration-credentials` (admin/coordinator)
+- `PUT /api/admin/integration-credentials` (admin)
+- `GET /api/admin/detection-rules` (admin/coordinator)
+- `PUT /api/admin/detection-rules` (admin)
 
 ### Monitoring and operations
 
