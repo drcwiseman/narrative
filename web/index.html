@@ -15,12 +15,14 @@
       .item:last-child { border-bottom: 0; }
       .pill { display: inline-block; margin-left: 0.5rem; padding: 0.12rem 0.45rem; border-radius: 999px; font-size: 0.8rem; background: #374151; }
       .harmful { background: #7f1d1d; }
-      input, button, textarea { width: 100%; margin: 0.25rem 0 0.5rem; background: #111827; color: #e5e7eb; border: 1px solid #4b5563; border-radius: 6px; padding: 0.45rem; }
+      input, button, textarea, select { width: 100%; margin: 0.25rem 0 0.5rem; background: #111827; color: #e5e7eb; border: 1px solid #4b5563; border-radius: 6px; padding: 0.45rem; }
       button { cursor: pointer; background: #2563eb; border: 0; }
       small { color: #9ca3af; }
       .hidden { display: none; }
       .row { display: flex; gap: 0.5rem; align-items: center; }
       .row button { width: auto; margin: 0; }
+      .toolbar { display: flex; gap: 0.5rem; margin-bottom: 0.5rem; }
+      .toolbar button { width: auto; }
     </style>
   </head>
   <body>
@@ -70,12 +72,76 @@
         <small id="scanResult"></small>
       </section>
 
+      <section class="card">
+        <h2>Campaigns</h2>
+        <div class="toolbar">
+          <button id="refreshCampaigns">Refresh Campaigns</button>
+        </div>
+        <div id="campaignsList"></div>
+      </section>
+
+      <section class="card">
+        <h2>Outreach Tasks</h2>
+        <form id="createOutreachForm">
+          <input name="campaign_id" type="number" placeholder="Campaign ID" required />
+          <input name="kol_handles" placeholder="@alpha,@beta" required />
+          <input name="notes" placeholder="Outreach notes" />
+          <button type="submit">Create Outreach Tasks</button>
+        </form>
+        <div class="toolbar">
+          <input id="outreachCampaignId" type="number" placeholder="Campaign ID to view" />
+          <button id="loadOutreach">Load Tasks</button>
+        </div>
+        <div id="outreachList"></div>
+      </section>
+
+      <section class="card">
+        <h2>Update Outreach Status</h2>
+        <form id="updateOutreachForm">
+          <input name="task_id" type="number" placeholder="Task ID" required />
+          <select name="status" required>
+            <option value="pending">pending</option>
+            <option value="contacted">contacted</option>
+            <option value="completed">completed</option>
+            <option value="failed">failed</option>
+          </select>
+          <input name="notes" placeholder="Status notes" />
+          <button type="submit">Update Task</button>
+        </form>
+      </section>
+
       <section class="card hidden" id="adminControls">
         <h2>Admin Controls</h2>
         <input id="connectorName" placeholder="Connector key name" />
         <input id="connectorPlatform" placeholder="Connector platform (x, facebook, ...)" />
         <button id="createConnectorKey">Create Connector Key</button>
         <small id="connectorKeyResult"></small>
+        <div class="toolbar">
+          <button id="listConnectorKeys">List Connector Keys</button>
+        </div>
+        <div id="connectorKeysList"></div>
+      </section>
+
+      <section class="card hidden" id="alertEndpointsSection">
+        <h2>Alert Endpoints</h2>
+        <form id="createAlertEndpointForm">
+          <input name="name" placeholder="Endpoint name" required />
+          <input name="url" placeholder="https://example.com/webhook" required />
+          <input name="min_harmful_score" type="number" min="0" max="1" step="0.1" value="0.8" />
+          <button type="submit">Create Alert Endpoint</button>
+        </form>
+        <div class="toolbar">
+          <button id="listAlertEndpoints">List Alert Endpoints</button>
+        </div>
+        <div id="alertEndpointsList"></div>
+      </section>
+
+      <section class="card hidden" id="auditSection">
+        <h2>Audit Logs</h2>
+        <div class="toolbar">
+          <button id="loadAuditLogs">Load Audit Logs</button>
+        </div>
+        <div id="auditLogsList"></div>
       </section>
     </div>
 
@@ -90,8 +156,19 @@
       </section>
       <section class="card">
         <h2>KOL Leaderboard</h2>
-        <button id="refreshKols">Refresh KOLs</button>
+        <div class="toolbar">
+          <button id="refreshKols">Refresh KOLs</button>
+        </div>
         <div id="kols"></div>
+      </section>
+
+      <section class="card">
+        <h2>KOL Rescore</h2>
+        <form id="rescoreForm">
+          <input name="constituency" placeholder="Constituency" value="central" required />
+          <button type="submit">Rescore Constituency</button>
+        </form>
+        <small id="rescoreResult"></small>
       </section>
     </div>
 
@@ -103,11 +180,19 @@
       const mentionsEl = document.getElementById("mentions");
       const alertsEl = document.getElementById("alerts");
       const kolsEl = document.getElementById("kols");
+      const campaignsListEl = document.getElementById("campaignsList");
+      const outreachListEl = document.getElementById("outreachList");
       const scanSectionEl = document.getElementById("scanSection");
       const scanResultEl = document.getElementById("scanResult");
       const adminControlsEl = document.getElementById("adminControls");
       const connectorKeyResultEl = document.getElementById("connectorKeyResult");
+      const connectorKeysListEl = document.getElementById("connectorKeysList");
+      const alertEndpointsSectionEl = document.getElementById("alertEndpointsSection");
+      const alertEndpointsListEl = document.getElementById("alertEndpointsList");
+      const auditSectionEl = document.getElementById("auditSection");
+      const auditLogsListEl = document.getElementById("auditLogsList");
       const refreshKolsButton = document.getElementById("refreshKols");
+      const rescoreResultEl = document.getElementById("rescoreResult");
       let currentRole = "";
       let stream = null;
 
@@ -175,8 +260,66 @@
         `).join("");
       }
 
+      async function loadCampaigns() {
+        const res = await api("/api/campaigns");
+        const data = await res.json();
+        campaignsListEl.innerHTML = data.length ? data.map((row) => `
+          <div class="item">
+            <b>#${row.id}</b> ${esc(row.name)}
+            <div>${esc(row.constituency)}</div>
+            <small>${esc(row.message)}</small>
+          </div>
+        `).join("") : "<small>No campaigns yet.</small>";
+      }
+
+      async function loadOutreach(campaignId) {
+        const res = await api(`/api/campaigns/${campaignId}/outreach`);
+        const data = await res.json();
+        outreachListEl.innerHTML = data.length ? data.map((row) => `
+          <div class="item">
+            <b>Task #${row.id}</b> ${esc(row.kol_handle)}
+            <span class="pill">${esc(row.status)}</span>
+            <div><small>${esc(row.notes || "")}</small></div>
+          </div>
+        `).join("") : "<small>No outreach tasks yet.</small>";
+      }
+
+      async function listConnectorKeys() {
+        const res = await api("/api/admin/connector-keys");
+        const data = await res.json();
+        connectorKeysListEl.innerHTML = data.length ? data.map((row) => `
+          <div class="item">
+            <b>${esc(row.name)}</b> ${esc(row.platform)}
+            <small>${esc(row.token_preview)}</small>
+          </div>
+        `).join("") : "<small>No connector keys yet.</small>";
+      }
+
+      async function listAlertEndpoints() {
+        const res = await api("/api/admin/alert-endpoints");
+        const data = await res.json();
+        alertEndpointsListEl.innerHTML = data.length ? data.map((row) => `
+          <div class="item">
+            <b>${esc(row.name)}</b>
+            <div><small>${esc(row.url)}</small></div>
+            <small>min score: ${row.min_harmful_score}</small>
+          </div>
+        `).join("") : "<small>No alert endpoints yet.</small>";
+      }
+
+      async function loadAuditLogs() {
+        const res = await api("/api/admin/audit-logs");
+        const data = await res.json();
+        auditLogsListEl.innerHTML = data.length ? data.map((row) => `
+          <div class="item">
+            <b>${esc(row.actor_email)}</b> ${esc(row.action)}
+            <small>${esc(row.resource_type)} #${esc(row.resource_id || "")}</small>
+          </div>
+        `).join("") : "<small>No audit logs yet.</small>";
+      }
+
       async function refreshAll() {
-        await Promise.all([loadMentions(), loadAlerts(), loadKols()]);
+        await Promise.all([loadMentions(), loadAlerts(), loadKols(), loadCampaigns()]);
       }
 
       function connectStream() {
@@ -223,6 +366,59 @@
           });
           e.target.reset();
           alert("Campaign created");
+          await loadCampaigns();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("refreshCampaigns").addEventListener("click", () => {
+        loadCampaigns().catch((err) => alert(err.message));
+      });
+
+      document.getElementById("createOutreachForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          const payload = Object.fromEntries(new FormData(e.target).entries());
+          const campaignId = Number(payload.campaign_id);
+          const kolHandles = String(payload.kol_handles || "")
+            .split(",")
+            .map((x) => x.trim())
+            .filter(Boolean);
+          await api(`/api/campaigns/${campaignId}/outreach`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ kol_handles: kolHandles, notes: payload.notes || "" }),
+          });
+          e.target.reset();
+          document.getElementById("outreachCampaignId").value = String(campaignId);
+          await loadOutreach(campaignId);
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("loadOutreach").addEventListener("click", async () => {
+        try {
+          const campaignId = Number(document.getElementById("outreachCampaignId").value);
+          if (!campaignId) return alert("Enter a campaign ID");
+          await loadOutreach(campaignId);
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("updateOutreachForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          const payload = Object.fromEntries(new FormData(e.target).entries());
+          const taskId = Number(payload.task_id);
+          await api(`/api/campaigns/outreach/${taskId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ status: payload.status, notes: payload.notes || "" }),
+          });
+          alert("Outreach task updated");
         } catch (err) {
           alert(err.message);
         }
@@ -230,6 +426,21 @@
 
       refreshKolsButton.addEventListener("click", () => {
         loadKols().catch((err) => alert(err.message));
+      });
+
+      document.getElementById("rescoreForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          const constituency = new FormData(e.target).get("constituency");
+          const res = await api(`/api/kols/rescore?constituency=${encodeURIComponent(constituency)}`, {
+            method: "POST",
+          });
+          const data = await res.json();
+          rescoreResultEl.textContent = `Rescored ${data.rescored} KOLs in ${data.constituency}`;
+          await loadKols();
+        } catch (err) {
+          alert(err.message);
+        }
       });
 
       document.getElementById("scanForm").addEventListener("submit", async (e) => {
@@ -267,9 +478,39 @@
           });
           const data = await res.json();
           connectorKeyResultEl.textContent = `Key created: ${data.name} token=${data.token}`;
+          await listConnectorKeys();
         } catch (err) {
           alert(err.message);
         }
+      });
+
+      document.getElementById("listConnectorKeys").addEventListener("click", () => {
+        listConnectorKeys().catch((err) => alert(err.message));
+      });
+
+      document.getElementById("createAlertEndpointForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          const payload = Object.fromEntries(new FormData(e.target).entries());
+          payload.min_harmful_score = Number(payload.min_harmful_score || 0.8);
+          await api("/api/admin/alert-endpoints", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          e.target.reset();
+          await listAlertEndpoints();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("listAlertEndpoints").addEventListener("click", () => {
+        listAlertEndpoints().catch((err) => alert(err.message));
+      });
+
+      document.getElementById("loadAuditLogs").addEventListener("click", () => {
+        loadAuditLogs().catch((err) => alert(err.message));
       });
 
       async function bootstrap() {
@@ -280,7 +521,12 @@
           identityEl.textContent = `Logged in as ${me.email} (${currentRole})`;
           adminControlsEl.classList.toggle("hidden", currentRole !== "admin");
           scanSectionEl.classList.toggle("hidden", !["admin", "coordinator", "analyst"].includes(currentRole));
+          alertEndpointsSectionEl.classList.toggle("hidden", currentRole !== "admin");
+          auditSectionEl.classList.toggle("hidden", currentRole !== "admin");
           await refreshAll();
+          if (currentRole === "admin") {
+            await Promise.all([listConnectorKeys(), listAlertEndpoints()]);
+          }
           connectStream();
         } catch (err) {
           clearSessionAndRedirect();
