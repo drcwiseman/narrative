@@ -8,7 +8,15 @@ from app.config import settings
 from app.database import get_db
 from app.deps import get_current_user
 from app.models import RevokedSubject, RevokedToken, User
-from app.schemas import LoginRequest, RefreshTokenRequest, RegisterRequest, TokenResponse, UserOut
+from app.schemas import (
+    DeleteAccountRequest,
+    LoginRequest,
+    ProfileUpdateRequest,
+    RefreshTokenRequest,
+    RegisterRequest,
+    TokenResponse,
+    UserOut,
+)
 from app.security import create_access_token, create_refresh_token, hash_password, verify_password
 from app.services.audit import write_audit_log
 
@@ -127,3 +135,60 @@ def me(current_user: User = Depends(get_current_user)):
         role=current_user.role,
         is_active=bool(current_user.is_active),
     )
+
+
+@router.patch("/me", response_model=UserOut)
+def update_me(
+    payload: ProfileUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.email == current_user.email, User.is_active == 1).first()
+    if user is None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Profile record unavailable. Please log in again after account sync.",
+        )
+    updates = {}
+    if payload.full_name is not None:
+        user.full_name = payload.full_name.strip()
+        updates["full_name"] = user.full_name
+    if payload.password:
+        user.password_hash = hash_password(payload.password)
+        updates["password_updated"] = True
+    if not updates:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="No profile fields to update")
+    db.commit()
+    db.refresh(user)
+    write_audit_log(db, user, "auth.profile_update", "user", str(user.id), updates)
+    return UserOut(
+        id=user.id,
+        email=user.email,
+        full_name=user.full_name,
+        role=user.role,
+        is_active=bool(user.is_active),
+    )
+
+
+@router.delete("/me")
+def delete_me(
+    payload: DeleteAccountRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    user = db.query(User).filter(User.email == current_user.email, User.is_active == 1).first()
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Active user profile not found")
+    if not verify_password(payload.password, user.password_hash):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid password")
+    user.is_active = 0
+    cutoff = int(datetime.now(timezone.utc).timestamp())
+    existing = db.query(RevokedSubject).filter(RevokedSubject.email == user.email).first()
+    if existing:
+        existing.revoke_before_epoch = cutoff
+        existing.updated_at = datetime.utcnow()
+    else:
+        db.add(RevokedSubject(email=user.email, revoke_before_epoch=cutoff))
+    db.commit()
+    write_audit_log(db, user, "auth.profile_delete", "user", str(user.id))
+    return {"ok": True, "message": "Account deactivated"}

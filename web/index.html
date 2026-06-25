@@ -39,6 +39,7 @@
         font-size: 0.9rem;
       }
       .sidebar a:hover { background: rgba(59, 130, 246, 0.16); }
+      .sidebar a.active { background: rgba(59, 130, 246, 0.26); color: #ffffff; }
       .main-content { padding: 1rem 1.2rem 1.6rem; }
       .header {
         display: flex;
@@ -80,30 +81,22 @@
         <h3>Narrative Intelligence</h3>
         <div class="nav-group">
           <span class="nav-label">Overview</span>
-          <a href="#executiveOverview">Executive Overview</a>
-          <a href="#accountsList">Connected Accounts</a>
-          <a href="#mentions">Live Feed</a>
-          <a href="#alerts">Harmful Alerts</a>
+          <a href="#dashboard" data-page="dashboard">Dashboard</a>
         </div>
         <div class="nav-group">
           <span class="nav-label">Monitoring</span>
-          <a href="#scanSection">Scan Platforms</a>
-          <a href="#googleScanSection">Google Source Scan</a>
-          <a href="#spreadAnalysisResult">Spread Analysis</a>
-          <a href="#counterAttackResult">Counter-Attack Plan</a>
+          <a href="#monitoring" data-page="monitoring">Monitoring</a>
         </div>
         <div class="nav-group">
           <span class="nav-label">Influence</span>
-          <a href="#kols">KOL Leaderboard</a>
-          <a href="#narrativeIntelResult">Narrative Intelligence</a>
-          <a href="#campaignImpactResult">Campaign Impact</a>
+          <a href="#intelligence" data-page="intelligence">Narrative Intelligence</a>
         </div>
         <div class="nav-group">
           <span class="nav-label">Operations</span>
-          <a href="#campaignsList">Campaigns</a>
-          <a href="#outreachList">Outreach Tasks</a>
-          <a href="#assistantResult">AI Assistant</a>
-          <a href="#auditLogsList">Audit Logs</a>
+          <a href="#response" data-page="response">Response Center</a>
+          <a href="#reports" data-page="reports">Reports</a>
+          <a href="#profile" data-page="profile">Profile</a>
+          <a href="#settings" data-page="settings">Settings</a>
         </div>
       </aside>
       <main class="main-content">
@@ -118,7 +111,7 @@
     </div>
 
     <div class="grid">
-      <section class="card">
+      <section class="card page-card" data-page="monitoring">
         <h2>Ingest Mention</h2>
         <form id="mentionForm">
           <input name="platform" placeholder="Platform (x, facebook, whatsapp)" required />
@@ -132,7 +125,7 @@
         </form>
       </section>
 
-      <section class="card">
+      <section class="card page-card" data-page="response">
         <h2>Create Campaign</h2>
         <form id="campaignForm">
           <input name="name" placeholder="Campaign Name" required />
@@ -142,7 +135,7 @@
         </form>
       </section>
 
-      <section class="card hidden" id="scanSection">
+      <section class="card hidden page-card" id="scanSection" data-page="monitoring">
         <h2>Scan All Platforms</h2>
         <form id="scanForm">
           <input name="constituency" value="central" />
@@ -153,7 +146,7 @@
         <small id="scanResult"></small>
       </section>
 
-      <section class="card">
+      <section class="card page-card" data-page="settings">
         <h2>Connected Accounts</h2>
         <div class="toolbar">
           <button id="refreshAccounts">Refresh Accounts</button>
@@ -161,7 +154,7 @@
         <div id="accountsList"></div>
       </section>
 
-      <section class="card">
+      <section class="card page-card" data-page="response">
         <h2>Campaigns</h2>
         <div class="toolbar">
           <button id="refreshCampaigns">Refresh Campaigns</button>
@@ -169,7 +162,7 @@
         <div id="campaignsList"></div>
       </section>
 
-      <section class="card">
+      <section class="card page-card" data-page="response">
         <h2>Outreach Tasks</h2>
         <form id="createOutreachForm">
           <input name="campaign_id" type="number" placeholder="Campaign ID" required />
@@ -184,7 +177,7 @@
         <div id="outreachList"></div>
       </section>
 
-      <section class="card">
+      <section class="card page-card" data-page="response">
         <h2>Update Outreach Status</h2>
         <form id="updateOutreachForm">
           <input name="task_id" type="number" placeholder="Task ID" required />
@@ -199,7 +192,7 @@
         </form>
       </section>
 
-      <section class="card hidden" id="adminControls">
+      <section class="card hidden page-card" id="adminControls" data-page="settings">
         <h2>Admin Controls</h2>
         <input id="connectorName" placeholder="Connector key name" />
         <input id="connectorPlatform" placeholder="Connector platform (x, facebook, ...)" />
@@ -215,7 +208,7 @@
         <div id="connectorKeysList"></div>
       </section>
 
-      <section class="card hidden" id="platformConnectionsSection">
+      <section class="card hidden page-card" id="platformConnectionsSection" data-page="settings">
         <h2>Platform Connections (X/Facebook/WhatsApp)</h2>
         <form id="upsertIntegrationCredentialForm">
           <select name="platform" required>
@@ -237,7 +230,7 @@
         <div id="integrationCredentialsList"></div>
       </section>
 
-      <section class="card hidden" id="googleScanSection">
+      <section class="card hidden page-card" id="googleScanSection" data-page="monitoring">
         <h2>Google Source Scan</h2>
         <form id="googleScanForm">
           <input name="query" placeholder="Keyword or phrase to scan on Google" required />
@@ -248,7 +241,25 @@
         <small id="googleScanResult"></small>
       </section>
 
-      <section class="card hidden" id="alertEndpointsSection">
+      <section class="card page-card" data-page="profile">
+        <h2>My Profile (CRUD)</h2>
+        <div class="toolbar">
+          <button id="refreshProfile">Load Profile</button>
+        </div>
+        <div id="profileDetails"></div>
+        <form id="profileUpdateForm">
+          <input name="full_name" placeholder="Update full name" />
+          <input name="password" type="password" minlength="8" placeholder="New password (optional)" />
+          <button type="submit">Update Profile</button>
+        </form>
+        <form id="deleteProfileForm">
+          <input name="password" type="password" minlength="8" placeholder="Confirm password to delete account" required />
+          <button type="submit">Delete My Account</button>
+        </form>
+        <small id="profileResult"></small>
+      </section>
+
+      <section class="card hidden page-card" id="alertEndpointsSection" data-page="settings">
         <h2>Alert Endpoints</h2>
         <form id="createAlertEndpointForm">
           <input name="name" placeholder="Endpoint name" required />
@@ -266,7 +277,7 @@
         <div id="alertEndpointsList"></div>
       </section>
 
-      <section class="card hidden" id="auditSection">
+      <section class="card hidden page-card" id="auditSection" data-page="settings">
         <h2>Audit Logs</h2>
         <div class="toolbar">
           <button id="loadAuditLogs">Load Audit Logs</button>
@@ -275,7 +286,7 @@
         <div id="auditLogsList"></div>
       </section>
 
-      <section class="card hidden" id="usersSection">
+      <section class="card hidden page-card" id="usersSection" data-page="settings">
         <h2>User Management</h2>
         <div class="toolbar">
           <button id="loadUsers">Load Users</button>
@@ -303,7 +314,7 @@
         <div id="usersList"></div>
       </section>
 
-      <section class="card hidden" id="detectionRulesSection">
+      <section class="card hidden page-card" id="detectionRulesSection" data-page="settings">
         <h2>Detection Rules</h2>
         <small>Edit rules that control negative-word detection and harmful scoring.</small>
         <label>Negative words (comma or newline separated)</label>
@@ -325,7 +336,7 @@
     </div>
 
     <div class="grid">
-      <section class="card">
+      <section class="card page-card" data-page="dashboard">
         <h2>Executive Overview</h2>
         <div class="toolbar">
           <button id="refreshExecutiveOverview">Refresh KPIs</button>
@@ -333,15 +344,15 @@
         <div id="executiveOverview"></div>
       </section>
 
-      <section class="card">
+      <section class="card page-card" data-page="monitoring">
         <h2>Live Mention Feed</h2>
         <div id="mentions"></div>
       </section>
-      <section class="card">
+      <section class="card page-card" data-page="monitoring">
         <h2>Harmful Alerts</h2>
         <div id="alerts"></div>
       </section>
-      <section class="card">
+      <section class="card page-card" data-page="intelligence">
         <h2>KOL Leaderboard</h2>
         <div class="toolbar">
           <button id="refreshKols">Refresh KOLs</button>
@@ -349,7 +360,7 @@
         <div id="kols"></div>
       </section>
 
-      <section class="card">
+      <section class="card page-card" data-page="intelligence">
         <h2>Narrative Intelligence</h2>
         <div class="toolbar">
           <button id="loadNarrativeMap">Narrative Map</button>
@@ -359,7 +370,7 @@
         <div id="narrativeIntelResult"></div>
       </section>
 
-      <section class="card">
+      <section class="card page-card" data-page="intelligence">
         <h2>KOL Rescore</h2>
         <form id="rescoreForm">
           <input name="constituency" placeholder="Constituency" value="central" required />
@@ -368,7 +379,7 @@
         <small id="rescoreResult"></small>
       </section>
 
-      <section class="card">
+      <section class="card page-card" data-page="intelligence">
         <h2>Spread Analysis</h2>
         <form id="spreadAnalysisForm">
           <input name="keyword" placeholder="Keyword to track spread (required)" required />
@@ -380,7 +391,7 @@
         <div id="spreadAnalysisResult"></div>
       </section>
 
-      <section class="card">
+      <section class="card page-card" data-page="response">
         <h2>Counter-Attack Plan</h2>
         <form id="counterAttackForm">
           <input name="keyword" placeholder="Keyword/claim to counter (required)" required />
@@ -392,7 +403,7 @@
         <div id="counterAttackResult"></div>
       </section>
 
-      <section class="card">
+      <section class="card page-card" data-page="response">
         <h2>Campaign Impact</h2>
         <form id="campaignImpactForm">
           <input name="campaign_id" type="number" placeholder="Campaign ID" required />
@@ -401,7 +412,7 @@
         <div id="campaignImpactResult"></div>
       </section>
 
-      <section class="card">
+      <section class="card page-card" data-page="intelligence">
         <h2>AI Assistant</h2>
         <form id="assistantQueryForm">
           <input name="q" placeholder="Ask: why is fuel shortage trending?" required />
@@ -410,7 +421,7 @@
         <div id="assistantResult"></div>
       </section>
 
-      <section class="card">
+      <section class="card page-card" data-page="reports">
         <h2>Reports</h2>
         <div class="toolbar">
           <button id="downloadDailyJson">Daily JSON</button>
@@ -440,6 +451,8 @@
       const googleScanSectionEl = document.getElementById("googleScanSection");
       const googleScanResultEl = document.getElementById("googleScanResult");
       const accountsListEl = document.getElementById("accountsList");
+      const profileDetailsEl = document.getElementById("profileDetails");
+      const profileResultEl = document.getElementById("profileResult");
       const adminControlsEl = document.getElementById("adminControls");
       const connectorKeyResultEl = document.getElementById("connectorKeyResult");
       const connectorKeysListEl = document.getElementById("connectorKeysList");
@@ -466,6 +479,9 @@
       const campaignImpactResultEl = document.getElementById("campaignImpactResult");
       const assistantResultEl = document.getElementById("assistantResult");
       const reportsResultEl = document.getElementById("reportsResult");
+      const navLinks = Array.from(document.querySelectorAll(".sidebar a[data-page]"));
+      const pageCards = Array.from(document.querySelectorAll(".page-card"));
+      const VALID_PAGES = new Set(["dashboard", "monitoring", "intelligence", "response", "reports", "profile", "settings"]);
       let currentRole = "";
       let stream = null;
 
@@ -477,6 +493,29 @@
         if (stream) stream.close();
         localStorage.removeItem("narrative_token");
         window.location.replace("/login");
+      }
+
+      function pageFromHash() {
+        const value = String(window.location.hash || "").replace("#", "").trim().toLowerCase();
+        return VALID_PAGES.has(value) ? value : "dashboard";
+      }
+
+      function applySidebarPage(page) {
+        const activePage = VALID_PAGES.has(page) ? page : "dashboard";
+        for (const link of navLinks) {
+          link.classList.toggle("active", link.dataset.page === activePage);
+        }
+        for (const card of pageCards) {
+          const cardPage = card.dataset.page || "dashboard";
+          const roleHidden = card.dataset.roleHidden === "1";
+          const shouldShow = cardPage === activePage && !roleHidden;
+          card.classList.toggle("hidden", !shouldShow);
+        }
+      }
+
+      function setRoleSectionVisibility(sectionEl, isVisible) {
+        sectionEl.dataset.roleHidden = isVisible ? "0" : "1";
+        sectionEl.classList.toggle("hidden", !isVisible);
       }
 
       async function api(path, options = {}) {
@@ -750,6 +789,20 @@
         `).join("") : "<small>No users found.</small>";
       }
 
+      function renderProfile(profile) {
+        profileDetailsEl.innerHTML = `
+          <div class="item"><b>${esc(profile.full_name || "No name")}</b></div>
+          <div class="item"><small>${esc(profile.email)} | role=${esc(profile.role)} | ${profile.is_active ? "active" : "inactive"}</small></div>
+        `;
+      }
+
+      async function loadMyProfile() {
+        const res = await api("/api/auth/me");
+        const profile = await res.json();
+        renderProfile(profile);
+        profileResultEl.textContent = "Profile loaded.";
+      }
+
       function parseWordList(input) {
         return String(input || "")
           .split(/[\n,]/)
@@ -841,6 +894,12 @@
       }
 
       document.getElementById("logoutBtn").addEventListener("click", clearSessionAndRedirect);
+      for (const link of navLinks) {
+        link.addEventListener("click", () => {
+          applySidebarPage(link.dataset.page || "dashboard");
+        });
+      }
+      window.addEventListener("hashchange", () => applySidebarPage(pageFromHash()));
 
       document.getElementById("mentionForm").addEventListener("submit", async (e) => {
         e.preventDefault();
@@ -947,6 +1006,47 @@
 
       refreshAccountsButton.addEventListener("click", () => {
         loadConnectedAccounts().catch((err) => alert(err.message));
+      });
+
+      document.getElementById("refreshProfile").addEventListener("click", () => {
+        loadMyProfile().catch((err) => alert(err.message));
+      });
+
+      document.getElementById("profileUpdateForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          const payload = Object.fromEntries(new FormData(e.target).entries());
+          if (!String(payload.full_name || "").trim()) delete payload.full_name;
+          if (!String(payload.password || "").trim()) delete payload.password;
+          const res = await api("/api/auth/me", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const profile = await res.json();
+          renderProfile(profile);
+          identityEl.textContent = `Logged in as ${profile.email} (${profile.role})`;
+          profileResultEl.textContent = "Profile updated.";
+          e.target.reset();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("deleteProfileForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          const payload = Object.fromEntries(new FormData(e.target).entries());
+          await api("/api/auth/me", {
+            method: "DELETE",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          alert("Account deleted. Redirecting to login.");
+          clearSessionAndRedirect();
+        } catch (err) {
+          alert(err.message);
+        }
       });
 
       document.getElementById("loadDetectionRules").addEventListener("click", () => {
@@ -1251,14 +1351,15 @@
           const me = await meRes.json();
           currentRole = me.role || "";
           identityEl.textContent = `Logged in as ${me.email} (${currentRole})`;
-          adminControlsEl.classList.toggle("hidden", currentRole !== "admin");
-          platformConnectionsSectionEl.classList.toggle("hidden", currentRole !== "admin");
-          scanSectionEl.classList.toggle("hidden", !["admin", "coordinator", "analyst"].includes(currentRole));
-          googleScanSectionEl.classList.toggle("hidden", !["admin", "coordinator", "analyst"].includes(currentRole));
-          alertEndpointsSectionEl.classList.toggle("hidden", currentRole !== "admin");
-          auditSectionEl.classList.toggle("hidden", currentRole !== "admin");
-          usersSectionEl.classList.toggle("hidden", currentRole !== "admin");
-          detectionRulesSectionEl.classList.toggle("hidden", currentRole !== "admin");
+          renderProfile(me);
+          setRoleSectionVisibility(adminControlsEl, currentRole === "admin");
+          setRoleSectionVisibility(platformConnectionsSectionEl, currentRole === "admin");
+          setRoleSectionVisibility(scanSectionEl, ["admin", "coordinator", "analyst"].includes(currentRole));
+          setRoleSectionVisibility(googleScanSectionEl, ["admin", "coordinator", "analyst"].includes(currentRole));
+          setRoleSectionVisibility(alertEndpointsSectionEl, currentRole === "admin");
+          setRoleSectionVisibility(auditSectionEl, currentRole === "admin");
+          setRoleSectionVisibility(usersSectionEl, currentRole === "admin");
+          setRoleSectionVisibility(detectionRulesSectionEl, currentRole === "admin");
           await Promise.all([refreshAll(), loadConnectedAccounts()]);
           if (currentRole === "admin") {
             await Promise.all([
@@ -1269,6 +1370,7 @@
               loadIntegrationCredentials(),
             ]);
           }
+          applySidebarPage(pageFromHash());
           connectStream();
         } catch (err) {
           clearSessionAndRedirect();

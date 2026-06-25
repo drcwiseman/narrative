@@ -96,6 +96,15 @@ class UserOut(BaseModel):
         from_attributes = True
 
 
+class ProfileUpdateRequest(BaseModel):
+    full_name: str | None = None
+    password: str | None = Field(default=None, min_length=8)
+
+
+class DeleteAccountRequest(BaseModel):
+    password: str
+
+
 class ConnectorKeyCreate(BaseModel):
     name: str
     platform: str
