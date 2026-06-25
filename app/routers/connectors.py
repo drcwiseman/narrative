@@ -272,6 +272,72 @@ def list_supported_platforms():
     return {"platforms": SUPPORTED_PLATFORMS}
 
 
+def _google_api_status() -> dict[str, Any]:
+    if not settings.google_cse_api_key or not settings.google_cse_cx:
+        return {
+            "configured": False,
+            "healthy": False,
+            "message": "Set GOOGLE_CSE_API_KEY and GOOGLE_CSE_CX in environment variables.",
+        }
+    try:
+        response = requests.get(
+            "https://www.googleapis.com/customsearch/v1",
+            params={
+                "key": settings.google_cse_api_key,
+                "cx": settings.google_cse_cx,
+                "q": "narrative healthcheck",
+                "num": 1,
+            },
+            timeout=6,
+        )
+    except requests.RequestException as exc:
+        return {
+            "configured": True,
+            "healthy": False,
+            "message": f"Google API request failed: {exc}",
+        }
+
+    if response.ok:
+        return {
+            "configured": True,
+            "healthy": True,
+            "message": "Google Custom Search API is reachable.",
+        }
+
+    google_message = ""
+    try:
+        error_payload = response.json().get("error", {})
+        google_message = str(error_payload.get("message", "")).strip()
+    except ValueError:
+        google_message = response.text[:300]
+    if not google_message:
+        google_message = "Unknown Google API error"
+
+    setup_hint = (
+        "Enable Custom Search JSON API in Google Cloud Console, verify billing/API access, "
+        "and ensure the API key is unrestricted or allows Custom Search API."
+    )
+    if response.status_code in {401, 403}:
+        return {
+            "configured": True,
+            "healthy": False,
+            "message": f"Google API access denied ({response.status_code}): {google_message}. {setup_hint}",
+        }
+    return {
+        "configured": True,
+        "healthy": False,
+        "message": f"Google API error ({response.status_code}): {google_message}",
+    }
+
+
+@router.get("/google/health")
+def google_health(
+    current_user: User = Depends(require_roles("admin", "coordinator", "analyst")),
+):
+    status = _google_api_status()
+    return {"ok": status["healthy"], **status}
+
+
 @router.get("/accounts")
 def list_connected_accounts(
     db: Session = Depends(get_db),
@@ -286,6 +352,8 @@ def list_connected_accounts(
     for row in keys:
         platform = (row.platform or "").lower()
         platform_key_counts[platform] = platform_key_counts.get(platform, 0) + 1
+
+    google_status = _google_api_status()
 
     accounts = [
         {
@@ -319,10 +387,11 @@ def list_connected_accounts(
         },
         {
             "platform": "google",
-            "connected": bool(settings.google_cse_api_key) and bool(settings.google_cse_cx),
+            "connected": google_status["healthy"],
             "mode": "search-api",
             "active_connector_keys": platform_key_counts.get("google", 0),
-            "api_configured": bool(settings.google_cse_api_key) and bool(settings.google_cse_cx),
+            "api_configured": google_status["configured"],
+            "status_message": google_status["message"],
         },
         {
             "platform": "instagram",
@@ -418,10 +487,11 @@ async def google_source_scan(
 
         if response.status_code in {401, 403}:
             raise HTTPException(
-                status_code=400,
+                status_code=403,
                 detail=(
                     f"Google API access denied ({response.status_code}): {google_message}. "
-                    "Verify GOOGLE_CSE_API_KEY project has Custom Search JSON API enabled and key restrictions allow it."
+                    "Enable Custom Search JSON API in Google Cloud Console for the key's project, "
+                    "accept Programmable Search terms, and ensure API key restrictions allow Custom Search API."
                 ),
             )
         raise HTTPException(status_code=502, detail=f"Google API error ({response.status_code}): {google_message}")

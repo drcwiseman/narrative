@@ -66,37 +66,56 @@
           <p class="page-subtitle" id="pageSubtitle">Real-time visibility into narratives, sentiment, and emerging risk signals.</p>
         </section>
 
-    <div class="grid">
+    <div class="page-grid">
       <section class="card page-card" data-page="monitoring">
-        <h2>Ingest Mention</h2>
-        <form id="mentionForm">
-          <input name="platform" placeholder="Platform (x, facebook, whatsapp)" required />
-          <input name="author_handle" placeholder="@handle" required />
-          <input name="author_name" placeholder="Author Name" />
-          <input name="followers" type="number" value="0" />
-          <input name="engagement_rate" type="number" step="0.01" value="0.1" />
-          <input name="constituency" value="central" />
-          <textarea name="content" placeholder="Mention text..." required></textarea>
+        <div class="card-head">
+          <div>
+            <h2>Ingest Mention</h2>
+            <p class="card-desc">Manually add a social mention for analysis and narrative tracking.</p>
+          </div>
+        </div>
+        <form id="mentionForm" class="form-grid form-narrow">
+          <div><label>Platform</label><input name="platform" placeholder="x, facebook, whatsapp" required /></div>
+          <div class="form-row-2">
+            <div><label>Author handle</label><input name="author_handle" placeholder="@handle" required /></div>
+            <div><label>Author name</label><input name="author_name" placeholder="Display name" /></div>
+          </div>
+          <div class="form-row-2">
+            <div><label>Followers</label><input name="followers" type="number" value="0" /></div>
+            <div><label>Engagement rate</label><input name="engagement_rate" type="number" step="0.01" value="0.1" /></div>
+          </div>
+          <div><label>Constituency</label><input name="constituency" value="central" /></div>
+          <div><label>Mention text</label><textarea name="content" placeholder="Enter mention content..." required></textarea></div>
           <button type="submit">Submit Mention</button>
         </form>
       </section>
 
       <section class="card page-card" data-page="response">
-        <h2>Create Campaign</h2>
-        <form id="campaignForm">
-          <input name="name" placeholder="Campaign Name" required />
-          <input name="constituency" value="central" />
-          <textarea name="message" placeholder="Counter-message..." required></textarea>
+        <div class="card-head">
+          <div>
+            <h2>Create Campaign</h2>
+            <p class="card-desc">Launch a counter-messaging campaign for a constituency.</p>
+          </div>
+        </div>
+        <form id="campaignForm" class="form-grid form-narrow">
+          <div><label>Campaign name</label><input name="name" placeholder="Campaign name" required /></div>
+          <div><label>Constituency</label><input name="constituency" value="central" /></div>
+          <div><label>Counter-message</label><textarea name="message" placeholder="Official response message..." required></textarea></div>
           <button type="submit">Create Campaign</button>
         </form>
       </section>
 
       <section class="card hidden page-card" id="scanSection" data-page="monitoring">
-        <h2>Scan All Platforms</h2>
-        <form id="scanForm">
-          <input name="constituency" value="central" />
-          <input name="platforms" placeholder="x,facebook,whatsapp,google,instagram,telegram,tiktok" />
-          <input name="batch_size_per_platform" type="number" min="1" max="20" value="2" />
+        <div class="card-head">
+          <div>
+            <h2>Scan All Platforms</h2>
+            <p class="card-desc">Run a batch scan across configured social sources.</p>
+          </div>
+        </div>
+        <form id="scanForm" class="form-grid form-narrow">
+          <div><label>Constituency</label><input name="constituency" value="central" /></div>
+          <div><label>Platforms</label><input name="platforms" placeholder="x,facebook,whatsapp,google,instagram,telegram,tiktok" /></div>
+          <div><label>Batch size per platform</label><input name="batch_size_per_platform" type="number" min="1" max="20" value="2" /></div>
           <button type="submit">Run Scan</button>
         </form>
         <small id="scanResult"></small>
@@ -187,32 +206,63 @@
       </section>
 
       <section class="card hidden page-card" id="googleScanSection" data-page="monitoring">
-        <h2>Google Source Scan</h2>
-        <form id="googleScanForm">
-          <input name="query" placeholder="Keyword or phrase to scan on Google" required />
-          <input name="constituency" value="central" />
-          <input name="max_results" type="number" min="1" max="10" value="5" />
+        <div class="card-head">
+          <div>
+            <h2>Google Source Scan</h2>
+            <p class="card-desc">Search the open web for narrative keywords and ingest results.</p>
+          </div>
+        </div>
+        <div id="googleHealthCallout" class="callout callout-info">
+          Checking Google API status...
+        </div>
+        <form id="googleScanForm" class="form-grid form-narrow">
+          <div><label>Search query</label><input name="query" placeholder="Keyword or phrase to scan on Google" required /></div>
+          <div class="form-row-2">
+            <div><label>Constituency</label><input name="constituency" value="central" /></div>
+            <div><label>Max results</label><input name="max_results" type="number" min="1" max="10" value="5" /></div>
+          </div>
           <button type="submit">Run Google Scan</button>
         </form>
-        <small id="googleScanResult"></small>
+        <div id="googleScanResult"></div>
       </section>
 
       <section class="card page-card" data-page="profile">
-        <h2>My Profile (CRUD)</h2>
-        <div class="toolbar">
-          <button id="refreshProfile">Load Profile</button>
+        <div class="card-head">
+          <div>
+            <h2>Account Overview</h2>
+            <p class="card-desc">Your profile details and access level.</p>
+          </div>
+          <button id="refreshProfile" type="button" class="btn-secondary">Refresh</button>
         </div>
         <div id="profileDetails"></div>
-        <form id="profileUpdateForm">
-          <input name="full_name" placeholder="Update full name" />
-          <input name="password" type="password" minlength="8" placeholder="New password (optional)" />
-          <button type="submit">Update Profile</button>
-        </form>
-        <form id="deleteProfileForm">
-          <input name="password" type="password" minlength="8" placeholder="Confirm password to delete account" required />
-          <button type="submit">Delete My Account</button>
+      </section>
+
+      <section class="card page-card" data-page="profile">
+        <div class="card-head">
+          <div>
+            <h2>Update Profile</h2>
+            <p class="card-desc">Change your display name or password.</p>
+          </div>
+        </div>
+        <form id="profileUpdateForm" class="form-grid form-narrow">
+          <div><label for="profileFullName">Full name</label><input id="profileFullName" name="full_name" placeholder="Your full name" autocomplete="name" /></div>
+          <div><label for="profileNewPassword">New password</label><input id="profileNewPassword" name="password" type="password" minlength="8" placeholder="Leave blank to keep current password" autocomplete="new-password" /></div>
+          <button type="submit">Save Changes</button>
         </form>
         <small id="profileResult"></small>
+      </section>
+
+      <section class="card page-card card-danger" data-page="profile">
+        <div class="card-head">
+          <div>
+            <h2>Danger Zone</h2>
+            <p class="card-desc">Deactivate your account permanently. You will be signed out immediately.</p>
+          </div>
+        </div>
+        <form id="deleteProfileForm" class="form-grid form-narrow">
+          <div><label for="profileDeletePassword">Confirm password</label><input id="profileDeletePassword" name="password" type="password" minlength="8" placeholder="Enter password to confirm deletion" autocomplete="current-password" required /></div>
+          <button type="submit" class="btn-danger">Delete My Account</button>
+        </form>
       </section>
 
       <section class="card hidden page-card" id="alertEndpointsSection" data-page="settings">
@@ -291,7 +341,7 @@
       </section>
     </div>
 
-    <div class="grid">
+    <div class="page-grid page-grid-wide">
       <section class="card page-card" data-page="dashboard">
         <div class="card-head">
           <div>
@@ -420,6 +470,7 @@
       const scanResultEl = document.getElementById("scanResult");
       const googleScanSectionEl = document.getElementById("googleScanSection");
       const googleScanResultEl = document.getElementById("googleScanResult");
+      const googleHealthCalloutEl = document.getElementById("googleHealthCallout");
       const accountsListEl = document.getElementById("accountsList");
       const profileDetailsEl = document.getElementById("profileDetails");
       const profileResultEl = document.getElementById("profileResult");
@@ -639,6 +690,33 @@
         `).join("") : "<small>No alert endpoints yet.</small>";
       }
 
+      async function loadGoogleHealth() {
+        if (!googleHealthCalloutEl) return;
+        try {
+          const res = await api("/api/connectors/google/health");
+          const data = await res.json();
+          if (data.healthy) {
+            googleHealthCalloutEl.className = "callout callout-info";
+            googleHealthCalloutEl.innerHTML = `<strong>Google API ready.</strong> ${esc(data.message || "")}`;
+            return;
+          }
+          googleHealthCalloutEl.className = "callout callout-error";
+          googleHealthCalloutEl.innerHTML = `
+            <strong>Google API not ready.</strong> ${esc(data.message || "Configuration required.")}
+            <ol>
+              <li>Open Google Cloud Console for your API key project.</li>
+              <li>Enable <em>Custom Search JSON API</em> (APIs &amp; Services → Library).</li>
+              <li>Create a Programmable Search Engine and copy the Search Engine ID (CX).</li>
+              <li>Set <code>GOOGLE_CSE_API_KEY</code> and <code>GOOGLE_CSE_CX</code> in Vercel env vars.</li>
+              <li>Redeploy, then run scan again.</li>
+            </ol>
+          `;
+        } catch (err) {
+          googleHealthCalloutEl.className = "callout callout-error";
+          googleHealthCalloutEl.textContent = err.message;
+        }
+      }
+
       async function loadConnectedAccounts() {
         const res = await api("/api/connectors/accounts");
         const data = await res.json();
@@ -648,6 +726,7 @@
             <b>${esc(row.platform)}</b>
             <span class="pill ${row.connected ? "connected" : "disconnected"}">${row.connected ? "connected" : "not connected"}</span>
             <div><small>mode=${esc(row.mode || "n/a")} | keys=${Number(row.active_connector_keys || 0)}</small></div>
+            ${row.status_message ? `<div><small>${esc(row.status_message)}</small></div>` : ""}
           </div>
         `).join("") : "<small>No platform account status available.</small>";
       }
@@ -1202,10 +1281,10 @@
             body: JSON.stringify(payload),
           });
           const data = await res.json();
-          googleScanResultEl.textContent = `Google scan created ${data.mentions_created} mentions from ${data.results_found} results for "${data.query}"`;
-          await refreshAll();
+          googleScanResultEl.innerHTML = `<div class="callout callout-info">Google scan created ${data.mentions_created} mentions from ${data.results_found} results for "${esc(data.query)}".</div>`;
+          await Promise.all([refreshAll(), loadConnectedAccounts()]);
         } catch (err) {
-          alert(err.message);
+          googleScanResultEl.innerHTML = `<div class="callout callout-error">${esc(err.message)}</div>`;
         }
       });
 
@@ -1366,7 +1445,11 @@
           setRoleSectionVisibility(auditSectionEl, currentRole === "admin");
           setRoleSectionVisibility(usersSectionEl, currentRole === "admin");
           setRoleSectionVisibility(detectionRulesSectionEl, currentRole === "admin");
-          await Promise.all([refreshAll(), loadConnectedAccounts()]);
+          const bootstrapTasks = [refreshAll(), loadConnectedAccounts()];
+          if (["admin", "coordinator", "analyst"].includes(currentRole)) {
+            bootstrapTasks.push(loadGoogleHealth());
+          }
+          await Promise.all(bootstrapTasks);
           if (currentRole === "admin") {
             await Promise.all([
               listConnectorKeys(),
