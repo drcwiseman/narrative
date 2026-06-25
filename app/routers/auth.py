@@ -30,7 +30,7 @@ def register(payload: RegisterRequest, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(user)
     write_audit_log(db, user, "auth.register", "user", str(user.id), {"role": role})
-    return TokenResponse(access_token=create_access_token(user.email), role=user.role)
+    return TokenResponse(access_token=create_access_token(user.email, user.role, user.full_name), role=user.role)
 
 
 @router.post("/login", response_model=TokenResponse)
@@ -41,7 +41,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)):
     if user.is_active != 1:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User inactive")
     write_audit_log(db, user, "auth.login", "user", str(user.id))
-    return TokenResponse(access_token=create_access_token(user.email), role=user.role)
+    return TokenResponse(access_token=create_access_token(user.email, user.role, user.full_name), role=user.role)
 
 
 @router.get("/me", response_model=UserOut)
