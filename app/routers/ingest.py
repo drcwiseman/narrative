@@ -1,11 +1,14 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends
+import json
+
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.deps import require_roles
-from app.models import Analysis, Mention, User
+from app.models import Analysis, IdempotencyRecord, Mention, User
+from app.observability import METRICS
 from app.schemas import MentionCreate
 from app.services.analyzer import extract_topic, harmful_claim_score, score_sentiment
 from app.services.audit import write_audit_log
@@ -64,6 +67,7 @@ async def ingest_mention_internal(payload: MentionCreate, db: Session, actor_ema
     if notification_results:
         event["notification_results"] = notification_results
     await event_stream.publish(event)
+    METRICS["mentions_ingested"] += 1
     write_audit_log(
         db,
         actor=None,
@@ -78,7 +82,26 @@ async def ingest_mention_internal(payload: MentionCreate, db: Session, actor_ema
 @router.post("")
 async def ingest_mention(
     payload: MentionCreate,
+    idempotency_key: str | None = Header(default=None),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "coordinator", "analyst")),
 ):
-    return await ingest_mention_internal(payload, db, actor_email=current_user.email)
+    if idempotency_key:
+        existing = db.query(IdempotencyRecord).filter(IdempotencyRecord.idempotency_key == idempotency_key).first()
+        if existing:
+            try:
+                return json.loads(existing.response_json)
+            except json.JSONDecodeError:
+                return {"ok": True, "deduped": True}
+    result = await ingest_mention_internal(payload, db, actor_email=current_user.email)
+    if idempotency_key:
+        db.add(
+            IdempotencyRecord(
+                idempotency_key=idempotency_key,
+                endpoint="/api/mentions",
+                response_json=json.dumps(result),
+                status_code=200,
+            )
+        )
+        db.commit()
+    return result

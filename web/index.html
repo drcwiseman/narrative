@@ -115,6 +115,10 @@
         <input id="connectorName" placeholder="Connector key name" />
         <input id="connectorPlatform" placeholder="Connector platform (x, facebook, ...)" />
         <button id="createConnectorKey">Create Connector Key</button>
+        <div class="toolbar">
+          <input id="rotateConnectorKeyId" type="number" placeholder="Connector key ID" />
+          <button id="rotateConnectorKey">Rotate Key</button>
+        </div>
         <small id="connectorKeyResult"></small>
         <div class="toolbar">
           <button id="listConnectorKeys">List Connector Keys</button>
@@ -133,6 +137,10 @@
         <div class="toolbar">
           <button id="listAlertEndpoints">List Alert Endpoints</button>
         </div>
+        <div class="toolbar">
+          <input id="testAlertEndpointId" type="number" placeholder="Alert endpoint ID" />
+          <button id="testAlertEndpoint">Test Endpoint</button>
+        </div>
         <div id="alertEndpointsList"></div>
       </section>
 
@@ -140,8 +148,35 @@
         <h2>Audit Logs</h2>
         <div class="toolbar">
           <button id="loadAuditLogs">Load Audit Logs</button>
+          <button id="exportAuditLogs">Export CSV</button>
         </div>
         <div id="auditLogsList"></div>
+      </section>
+
+      <section class="card hidden" id="usersSection">
+        <h2>User Management</h2>
+        <div class="toolbar">
+          <button id="loadUsers">Load Users</button>
+        </div>
+        <form id="updateUserRoleForm">
+          <input name="user_id" type="number" placeholder="User ID" required />
+          <select name="role" required>
+            <option value="admin">admin</option>
+            <option value="coordinator">coordinator</option>
+            <option value="analyst">analyst</option>
+            <option value="outreach">outreach</option>
+          </select>
+          <button type="submit">Update Role</button>
+        </form>
+        <form id="updateUserActiveForm">
+          <input name="user_id" type="number" placeholder="User ID" required />
+          <select name="is_active" required>
+            <option value="1">active</option>
+            <option value="0">inactive</option>
+          </select>
+          <button type="submit">Update Active Status</button>
+        </form>
+        <div id="usersList"></div>
       </section>
     </div>
 
@@ -191,6 +226,8 @@
       const alertEndpointsListEl = document.getElementById("alertEndpointsList");
       const auditSectionEl = document.getElementById("auditSection");
       const auditLogsListEl = document.getElementById("auditLogsList");
+      const usersSectionEl = document.getElementById("usersSection");
+      const usersListEl = document.getElementById("usersList");
       const refreshKolsButton = document.getElementById("refreshKols");
       const rescoreResultEl = document.getElementById("rescoreResult");
       let currentRole = "";
@@ -289,7 +326,7 @@
         const data = await res.json();
         connectorKeysListEl.innerHTML = data.length ? data.map((row) => `
           <div class="item">
-            <b>${esc(row.name)}</b> ${esc(row.platform)}
+            <b>#${row.id} ${esc(row.name)}</b> ${esc(row.platform)}
             <small>${esc(row.token_preview)}</small>
           </div>
         `).join("") : "<small>No connector keys yet.</small>";
@@ -316,6 +353,18 @@
             <small>${esc(row.resource_type)} #${esc(row.resource_id || "")}</small>
           </div>
         `).join("") : "<small>No audit logs yet.</small>";
+      }
+
+      async function loadUsers() {
+        const res = await api("/api/admin/users");
+        const data = await res.json();
+        usersListEl.innerHTML = data.length ? data.map((row) => `
+          <div class="item">
+            <b>#${row.id} ${esc(row.email)}</b>
+            <span class="pill">${esc(row.role)}</span>
+            <small>${row.is_active ? "active" : "inactive"}</small>
+          </div>
+        `).join("") : "<small>No users found.</small>";
       }
 
       async function refreshAll() {
@@ -488,6 +537,19 @@
         listConnectorKeys().catch((err) => alert(err.message));
       });
 
+      document.getElementById("rotateConnectorKey").addEventListener("click", async () => {
+        try {
+          const keyId = Number(document.getElementById("rotateConnectorKeyId").value);
+          if (!keyId) return alert("Enter a connector key ID");
+          const res = await api(`/api/admin/connector-keys/${keyId}/rotate`, { method: "POST" });
+          const data = await res.json();
+          connectorKeyResultEl.textContent = `Rotated key ${data.name}. New token: ${data.token}`;
+          await listConnectorKeys();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
       document.getElementById("createAlertEndpointForm").addEventListener("submit", async (e) => {
         e.preventDefault();
         try {
@@ -509,8 +571,66 @@
         listAlertEndpoints().catch((err) => alert(err.message));
       });
 
+      document.getElementById("testAlertEndpoint").addEventListener("click", async () => {
+        try {
+          const endpointId = Number(document.getElementById("testAlertEndpointId").value);
+          if (!endpointId) return alert("Enter an alert endpoint ID");
+          const res = await api(`/api/admin/alert-endpoints/${endpointId}/test`, { method: "POST" });
+          const data = await res.json();
+          alert(`Test sent. Results: ${JSON.stringify(data.results)}`);
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
       document.getElementById("loadAuditLogs").addEventListener("click", () => {
         loadAuditLogs().catch((err) => alert(err.message));
+      });
+
+      document.getElementById("exportAuditLogs").addEventListener("click", async () => {
+        try {
+          const res = await api("/api/admin/audit-logs/export.csv");
+          const text = await res.text();
+          const blob = new Blob([text], { type: "text/csv" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = "audit-logs.csv";
+          a.click();
+          URL.revokeObjectURL(url);
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("loadUsers").addEventListener("click", () => {
+        loadUsers().catch((err) => alert(err.message));
+      });
+
+      document.getElementById("updateUserRoleForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          const payload = Object.fromEntries(new FormData(e.target).entries());
+          await api(`/api/admin/users/${Number(payload.user_id)}/role?role=${encodeURIComponent(payload.role)}`, {
+            method: "PATCH",
+          });
+          await loadUsers();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("updateUserActiveForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          const payload = Object.fromEntries(new FormData(e.target).entries());
+          await api(`/api/admin/users/${Number(payload.user_id)}/active?is_active=${encodeURIComponent(payload.is_active)}`, {
+            method: "PATCH",
+          });
+          await loadUsers();
+        } catch (err) {
+          alert(err.message);
+        }
       });
 
       async function bootstrap() {
@@ -523,9 +643,10 @@
           scanSectionEl.classList.toggle("hidden", !["admin", "coordinator", "analyst"].includes(currentRole));
           alertEndpointsSectionEl.classList.toggle("hidden", currentRole !== "admin");
           auditSectionEl.classList.toggle("hidden", currentRole !== "admin");
+          usersSectionEl.classList.toggle("hidden", currentRole !== "admin");
           await refreshAll();
           if (currentRole === "admin") {
-            await Promise.all([listConnectorKeys(), listAlertEndpoints()]);
+            await Promise.all([listConnectorKeys(), listAlertEndpoints(), loadUsers()]);
           }
           connectStream();
         } catch (err) {

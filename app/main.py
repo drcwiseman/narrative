@@ -1,16 +1,22 @@
 from pathlib import Path
+import asyncio
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 
-from app.database import Base, engine
-from app.routers import admin, auth, campaigns, connectors, ingest, kol, monitoring
+from app.database import Base, SessionLocal, engine
+from app.middleware import basic_rate_limit_middleware, request_context_middleware
+from app.observability import metrics_snapshot
+from app.routers import admin, auth, campaigns, connectors, ingest, kol, monitoring, queue
+from app.services.queue import process_pending_jobs
 
 
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Narrative Monitoring System", version="0.1.0")
+app.middleware("http")(request_context_middleware)
+app.middleware("http")(basic_rate_limit_middleware)
 app.include_router(auth.router)
 app.include_router(admin.router)
 app.include_router(ingest.router)
@@ -18,6 +24,7 @@ app.include_router(connectors.router)
 app.include_router(monitoring.router)
 app.include_router(kol.router)
 app.include_router(campaigns.router)
+app.include_router(queue.router)
 
 
 STATIC_DIR = Path(__file__).resolve().parent.parent / "web"
@@ -44,6 +51,26 @@ def health():
     return {"ok": True}
 
 
+@app.get("/metrics")
+def metrics():
+    return metrics_snapshot()
+
+
 @app.get("/favicon.ico")
 def favicon():
     return Response(status_code=204)
+
+
+async def queue_worker_loop() -> None:
+    while True:
+        db = SessionLocal()
+        try:
+            await process_pending_jobs(db, max_jobs=10)
+        finally:
+            db.close()
+        await asyncio.sleep(2)
+
+
+@app.on_event("startup")
+async def startup_worker() -> None:
+    asyncio.create_task(queue_worker_loop())

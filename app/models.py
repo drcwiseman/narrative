@@ -120,4 +120,71 @@ class AuditLog(Base):
     resource_type: Mapped[str] = mapped_column(String(64), index=True)
     resource_id: Mapped[str] = mapped_column(String(64), default="")
     metadata_json: Mapped[str] = mapped_column(Text, default="{}")
+    prev_hash: Mapped[str] = mapped_column(String(128), default="")
+    event_hash: Mapped[str] = mapped_column(String(128), index=True, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class RevokedToken(Base):
+    __tablename__ = "revoked_tokens"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    jti: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    email: Mapped[str] = mapped_column(String(255), index=True)
+    reason: Mapped[str] = mapped_column(String(64), default="logout")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class RevokedSubject(Base):
+    __tablename__ = "revoked_subjects"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    revoke_before_epoch: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class IdempotencyRecord(Base):
+    __tablename__ = "idempotency_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    idempotency_key: Mapped[str] = mapped_column(String(128), unique=True, index=True)
+    endpoint: Mapped[str] = mapped_column(String(128), index=True)
+    response_json: Mapped[str] = mapped_column(Text, default="{}")
+    status_code: Mapped[int] = mapped_column(Integer, default=200)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class SavedView(Base):
+    __tablename__ = "saved_views"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    owner_email: Mapped[str] = mapped_column(String(255), index=True)
+    name: Mapped[str] = mapped_column(String(128))
+    view_type: Mapped[str] = mapped_column(String(64), index=True)
+    query_json: Mapped[str] = mapped_column(Text, default="{}")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class QueueJob(Base):
+    __tablename__ = "queue_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    job_type: Mapped[str] = mapped_column(String(64), index=True)
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    status: Mapped[str] = mapped_column(String(32), default="pending", index=True)
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+
+class DeadLetterJob(Base):
+    __tablename__ = "dead_letter_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    queue_job_id: Mapped[int] = mapped_column(Integer, index=True)
+    job_type: Mapped[str] = mapped_column(String(64), index=True)
+    payload_json: Mapped[str] = mapped_column(Text, default="{}")
+    reason: Mapped[str] = mapped_column(Text, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)

@@ -7,6 +7,7 @@ from app.models import Campaign, OutreachTask
 from app.models import User
 from app.schemas import CampaignCreate, OutreachCreate, OutreachStatusUpdate
 from app.services.audit import write_audit_log
+from app.services.integrations import send_crm_update, send_slack_notification
 
 
 router = APIRouter(prefix="/api/campaigns", tags=["campaigns"])
@@ -23,6 +24,15 @@ def create_campaign(
     db.commit()
     db.refresh(campaign)
     write_audit_log(db, current_user, "campaign.create", "campaign", str(campaign.id), {"name": campaign.name})
+    send_slack_notification(
+        {
+            "event": "campaign.create",
+            "campaign_id": campaign.id,
+            "name": campaign.name,
+            "constituency": campaign.constituency,
+            "actor": current_user.email,
+        }
+    )
     return {
         "id": campaign.id,
         "name": campaign.name,
@@ -33,10 +43,18 @@ def create_campaign(
 
 @router.get("")
 def list_campaigns(
+    constituency: str | None = None,
+    q: str | None = None,
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("admin", "coordinator", "analyst", "outreach")),
 ):
-    rows = db.query(Campaign).order_by(Campaign.created_at.desc()).all()
+    query = db.query(Campaign)
+    if constituency:
+        query = query.filter(Campaign.constituency == constituency)
+    if q:
+        q_like = f"%{q}%"
+        query = query.filter((Campaign.name.ilike(q_like)) | (Campaign.message.ilike(q_like)))
+    rows = query.order_by(Campaign.created_at.desc()).all()
     return [
         {"id": row.id, "name": row.name, "message": row.message, "constituency": row.constituency}
         for row in rows
@@ -67,6 +85,15 @@ def create_outreach_tasks(
         "campaign",
         str(campaign.id),
         {"task_count": len(tasks)},
+    )
+    send_crm_update(
+        {
+            "event": "outreach.create_batch",
+            "campaign_id": campaign.id,
+            "kol_handles": payload.kol_handles,
+            "notes": payload.notes,
+            "actor": current_user.email,
+        }
     )
     return {"ok": True, "campaign_id": campaign.id, "created": len(tasks)}
 
@@ -105,6 +132,17 @@ def update_outreach_task(
     db.commit()
     db.refresh(row)
     write_audit_log(db, current_user, "outreach.update", "outreach_task", str(row.id), {"status": row.status})
+    send_crm_update(
+        {
+            "event": "outreach.update",
+            "task_id": row.id,
+            "campaign_id": row.campaign_id,
+            "kol_handle": row.kol_handle,
+            "status": row.status,
+            "notes": row.notes,
+            "actor": current_user.email,
+        }
+    )
     return {
         "id": row.id,
         "campaign_id": row.campaign_id,
