@@ -402,9 +402,28 @@ async def google_source_scan(
             },
             timeout=10,
         )
-        response.raise_for_status()
     except requests.RequestException as exc:
         raise HTTPException(status_code=502, detail=f"Google search request failed: {exc}") from exc
+
+    if not response.ok:
+        google_message = ""
+        try:
+            error_payload = response.json().get("error", {})
+            google_message = str(error_payload.get("message", "")).strip()
+        except ValueError:
+            google_message = response.text[:300]
+        if not google_message:
+            google_message = "Unknown Google API error"
+
+        if response.status_code in {401, 403}:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Google API access denied ({response.status_code}): {google_message}. "
+                    "Verify GOOGLE_CSE_API_KEY project has Custom Search JSON API enabled and key restrictions allow it."
+                ),
+            )
+        raise HTTPException(status_code=502, detail=f"Google API error ({response.status_code}): {google_message}")
 
     items = response.json().get("items", [])
     mention_ids: list[int] = []
