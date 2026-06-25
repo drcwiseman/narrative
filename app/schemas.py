@@ -53,6 +53,23 @@ class CampaignCreate(BaseModel):
     constituency: str = "default"
 
 
+class CampaignUpdate(BaseModel):
+    name: str | None = None
+    message: str | None = None
+    constituency: str | None = None
+
+
+class CampaignOut(BaseModel):
+    id: int
+    name: str
+    message: str
+    constituency: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 class OutreachCreate(BaseModel):
     kol_handles: list[str]
     notes: str = ""

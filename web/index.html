@@ -130,11 +130,35 @@
       </section>
 
       <section class="card page-card" data-page="response">
-        <h2>Campaigns</h2>
-        <div class="toolbar">
-          <button id="refreshCampaigns">Refresh Campaigns</button>
+        <div class="card-head">
+          <div>
+            <h2>Manage Campaigns</h2>
+            <p class="card-desc">View, edit, or delete existing counter-messaging campaigns.</p>
+          </div>
+          <button id="refreshCampaigns" type="button" class="btn-secondary">Refresh</button>
         </div>
         <div id="campaignsList"></div>
+        <form id="updateCampaignForm" class="form-grid form-narrow form-section">
+          <h3>Edit Campaign</h3>
+          <p class="card-desc">Select a campaign below, or enter an ID to load it for editing.</p>
+          <div class="form-row-2">
+            <div>
+              <label for="editCampaignId">Campaign ID</label>
+              <input id="editCampaignId" name="campaign_id" type="number" placeholder="Campaign ID" required />
+            </div>
+            <div class="row" style="align-items:flex-end;">
+              <button id="loadCampaignForEdit" type="button" class="btn-secondary">Load</button>
+            </div>
+          </div>
+          <div><label for="editCampaignName">Name</label><input id="editCampaignName" name="name" placeholder="Campaign name" required /></div>
+          <div><label for="editCampaignConstituency">Constituency</label><input id="editCampaignConstituency" name="constituency" placeholder="central" required /></div>
+          <div><label for="editCampaignMessage">Counter-message</label><textarea id="editCampaignMessage" name="message" placeholder="Official response message..." required></textarea></div>
+          <div class="toolbar">
+            <button type="submit">Save Changes</button>
+            <button id="deleteCampaignBtn" type="button" class="btn-danger">Delete Campaign</button>
+          </div>
+        </form>
+        <small id="campaignManageResult"></small>
       </section>
 
       <section class="card page-card" data-page="response">
@@ -528,6 +552,11 @@
       const coordinationResultEl = document.getElementById("coordinationResult");
       const influenceNetworkResultEl = document.getElementById("influenceNetworkResult");
       const campaignsListEl = document.getElementById("campaignsList");
+      const campaignManageResultEl = document.getElementById("campaignManageResult");
+      const editCampaignIdEl = document.getElementById("editCampaignId");
+      const editCampaignNameEl = document.getElementById("editCampaignName");
+      const editCampaignConstituencyEl = document.getElementById("editCampaignConstituency");
+      const editCampaignMessageEl = document.getElementById("editCampaignMessage");
       const outreachListEl = document.getElementById("outreachList");
       const scanSectionEl = document.getElementById("scanSection");
       const scanResultEl = document.getElementById("scanResult");
@@ -727,16 +756,42 @@
         `;
       }
 
+      function fillCampaignEditForm(campaign) {
+        editCampaignIdEl.value = String(campaign.id);
+        editCampaignNameEl.value = campaign.name || "";
+        editCampaignConstituencyEl.value = campaign.constituency || "";
+        editCampaignMessageEl.value = campaign.message || "";
+      }
+
+      async function loadCampaignForEdit(campaignId) {
+        const res = await api(`/api/campaigns/${Number(campaignId)}`);
+        const campaign = await res.json();
+        fillCampaignEditForm(campaign);
+        campaignManageResultEl.textContent = `Loaded campaign #${campaign.id} for editing.`;
+        return campaign;
+      }
+
       async function loadCampaigns() {
         const res = await api("/api/campaigns");
         const data = await res.json();
-        campaignsListEl.innerHTML = data.length ? data.map((row) => `
-          <div class="item">
-            <b>#${row.id}</b> ${esc(row.name)}
-            <div>${esc(row.constituency)}</div>
-            <small>${esc(row.message)}</small>
+        if (!data.length) {
+          campaignsListEl.innerHTML = '<div class="empty-state">No campaigns yet. Create one above.</div>';
+          return;
+        }
+        campaignsListEl.innerHTML = data.map((row) => `
+          <div class="feed-item">
+            <div class="feed-meta">
+              <b>#${row.id} ${esc(row.name)}</b>
+              <span class="pill">${esc(row.constituency)}</span>
+            </div>
+            <div class="feed-body">${esc(row.message)}</div>
+            <small>created ${esc(row.created_at || "n/a")}</small>
+            <div class="toolbar">
+              <button type="button" class="btn-secondary" data-edit-campaign="${row.id}">Edit</button>
+              <button type="button" class="btn-danger" data-delete-campaign="${row.id}">Delete</button>
+            </div>
           </div>
-        `).join("") : "<small>No campaigns yet.</small>";
+        `).join("");
       }
 
       async function loadOutreach(campaignId) {
@@ -1128,6 +1183,76 @@
         }
       });
 
+      document.getElementById("refreshCampaigns").addEventListener("click", () => {
+        loadCampaigns().catch((err) => alert(err.message));
+      });
+
+      campaignsListEl.addEventListener("click", async (e) => {
+        const editBtn = e.target.closest("[data-edit-campaign]");
+        const deleteBtn = e.target.closest("[data-delete-campaign]");
+        try {
+          if (editBtn) {
+            await loadCampaignForEdit(editBtn.dataset.editCampaign);
+            return;
+          }
+          if (deleteBtn) {
+            const campaignId = Number(deleteBtn.dataset.deleteCampaign);
+            if (!confirm(`Delete campaign #${campaignId}? Linked outreach tasks will also be removed.`)) return;
+            await api(`/api/campaigns/${campaignId}`, { method: "DELETE" });
+            campaignManageResultEl.textContent = `Campaign #${campaignId} deleted.`;
+            document.getElementById("updateCampaignForm").reset();
+            await loadCampaigns();
+          }
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("loadCampaignForEdit").addEventListener("click", async () => {
+        try {
+          const campaignId = Number(editCampaignIdEl.value);
+          if (!campaignId) return alert("Enter a campaign ID");
+          await loadCampaignForEdit(campaignId);
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("updateCampaignForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          const payload = Object.fromEntries(new FormData(e.target).entries());
+          const campaignId = Number(payload.campaign_id);
+          await api(`/api/campaigns/${campaignId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              name: payload.name,
+              message: payload.message,
+              constituency: payload.constituency,
+            }),
+          });
+          campaignManageResultEl.textContent = `Campaign #${campaignId} updated.`;
+          await loadCampaigns();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("deleteCampaignBtn").addEventListener("click", async () => {
+        try {
+          const campaignId = Number(editCampaignIdEl.value);
+          if (!campaignId) return alert("Enter a campaign ID to delete");
+          if (!confirm(`Delete campaign #${campaignId}? Linked outreach tasks will also be removed.`)) return;
+          await api(`/api/campaigns/${campaignId}`, { method: "DELETE" });
+          campaignManageResultEl.textContent = `Campaign #${campaignId} deleted.`;
+          document.getElementById("updateCampaignForm").reset();
+          await loadCampaigns();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
       document.getElementById("campaignForm").addEventListener("submit", async (e) => {
         e.preventDefault();
         try {
@@ -1138,15 +1263,11 @@
             body: JSON.stringify(payload),
           });
           e.target.reset();
-          alert("Campaign created");
+          campaignManageResultEl.textContent = "Campaign created.";
           await loadCampaigns();
         } catch (err) {
           alert(err.message);
         }
-      });
-
-      document.getElementById("refreshCampaigns").addEventListener("click", () => {
-        loadCampaigns().catch((err) => alert(err.message));
       });
 
       document.getElementById("createOutreachForm").addEventListener("submit", async (e) => {
