@@ -1,7 +1,10 @@
 from datetime import datetime
+import base64
+import hashlib
+import hmac
 import random
 
-from fastapi import APIRouter, Depends, Header, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.config import settings
@@ -137,6 +140,24 @@ def ingest_x_webhook(
     }
     job = enqueue_job(db, "mention_ingest", mention)
     return {"ok": True, "queued_job_id": job.id}
+
+
+@router.get("/x/webhook")
+def verify_x_webhook_crc(crc_token: str = Query(...)):
+    """
+    X webhook CRC check endpoint.
+    X sends a GET with ?crc_token=... and expects:
+    {"response_token":"sha256=<base64_hmac_sha256>"}
+    """
+    if not settings.x_webhook_secret:
+        raise HTTPException(status_code=503, detail="X_WEBHOOK_SECRET not configured")
+    digest = hmac.new(
+        settings.x_webhook_secret.encode("utf-8"),
+        crc_token.encode("utf-8"),
+        hashlib.sha256,
+    ).digest()
+    response_token = "sha256=" + base64.b64encode(digest).decode("utf-8")
+    return {"response_token": response_token}
 
 
 @router.post("/facebook/webhook")

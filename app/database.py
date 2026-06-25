@@ -8,7 +8,7 @@ from sqlalchemy.orm import declarative_base, sessionmaker
 def _resolve_database_url() -> str:
     configured = os.getenv("DATABASE_URL")
     if configured:
-        return configured
+        return configured.strip().strip('"').strip("'")
 
     # Vercel serverless filesystem is read-only except for /tmp.
     if os.getenv("VERCEL") or os.getenv("VERCEL_ENV"):
