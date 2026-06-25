@@ -246,6 +246,69 @@ def list_supported_platforms():
     return {"platforms": SUPPORTED_PLATFORMS}
 
 
+@router.get("/accounts")
+def list_connected_accounts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("admin", "coordinator", "analyst", "outreach")),
+):
+    keys = db.query(ConnectorKey).filter(ConnectorKey.is_active == 1).all()
+    platform_key_counts: dict[str, int] = {}
+    for row in keys:
+        platform = (row.platform or "").lower()
+        platform_key_counts[platform] = platform_key_counts.get(platform, 0) + 1
+
+    accounts = [
+        {
+            "platform": "x",
+            "connected": bool(settings.x_webhook_secret) and platform_key_counts.get("x", 0) > 0,
+            "mode": "webhook+connector-key",
+            "active_connector_keys": platform_key_counts.get("x", 0),
+            "webhook_configured": bool(settings.x_webhook_secret),
+        },
+        {
+            "platform": "facebook",
+            "connected": bool(settings.facebook_webhook_secret) and bool(settings.facebook_webhook_verify_token),
+            "mode": "webhook",
+            "active_connector_keys": platform_key_counts.get("facebook", 0),
+            "webhook_configured": bool(settings.facebook_webhook_secret),
+        },
+        {
+            "platform": "whatsapp",
+            "connected": bool(settings.whatsapp_webhook_secret) and bool(settings.whatsapp_webhook_verify_token),
+            "mode": "webhook",
+            "active_connector_keys": platform_key_counts.get("whatsapp", 0),
+            "webhook_configured": bool(settings.whatsapp_webhook_secret),
+        },
+        {
+            "platform": "slack",
+            "connected": bool(settings.slack_signing_secret) and bool(settings.slack_webhook_url),
+            "mode": "events+alerts",
+            "active_connector_keys": platform_key_counts.get("slack", 0),
+            "events_configured": bool(settings.slack_signing_secret),
+            "alerts_configured": bool(settings.slack_webhook_url),
+        },
+        {
+            "platform": "instagram",
+            "connected": platform_key_counts.get("instagram", 0) > 0,
+            "mode": "simulated/connector-key",
+            "active_connector_keys": platform_key_counts.get("instagram", 0),
+        },
+        {
+            "platform": "telegram",
+            "connected": platform_key_counts.get("telegram", 0) > 0,
+            "mode": "simulated/connector-key",
+            "active_connector_keys": platform_key_counts.get("telegram", 0),
+        },
+        {
+            "platform": "tiktok",
+            "connected": platform_key_counts.get("tiktok", 0) > 0,
+            "mode": "simulated/connector-key",
+            "active_connector_keys": platform_key_counts.get("tiktok", 0),
+        },
+    ]
+    return {"accounts": accounts}
+
+
 @router.post("/scan-all")
 async def scan_all_social_platforms(
     payload: ConnectorScanRequest,

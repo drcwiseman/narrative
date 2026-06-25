@@ -100,7 +100,16 @@ def list_alert_endpoints(
 ):
     rows = db.query(AlertEndpoint).order_by(AlertEndpoint.created_at.desc()).all()
     write_audit_log(db, current_user, "alert_endpoint.list", "alert_endpoint")
-    return rows
+    return [
+        {
+            "id": row.id,
+            "name": row.name,
+            "url": row.url,
+            "min_harmful_score": row.min_harmful_score,
+            "is_active": bool(row.is_active),
+        }
+        for row in rows
+    ]
 
 
 @router.get("/audit-logs")

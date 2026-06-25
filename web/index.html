@@ -15,6 +15,8 @@
       .item:last-child { border-bottom: 0; }
       .pill { display: inline-block; margin-left: 0.5rem; padding: 0.12rem 0.45rem; border-radius: 999px; font-size: 0.8rem; background: #374151; }
       .harmful { background: #7f1d1d; }
+      .connected { background: #065f46; }
+      .disconnected { background: #7f1d1d; }
       input, button, textarea, select { width: 100%; margin: 0.25rem 0 0.5rem; background: #111827; color: #e5e7eb; border: 1px solid #4b5563; border-radius: 6px; padding: 0.45rem; }
       button { cursor: pointer; background: #2563eb; border: 0; }
       small { color: #9ca3af; }
@@ -70,6 +72,14 @@
           <button type="submit">Run Scan</button>
         </form>
         <small id="scanResult"></small>
+      </section>
+
+      <section class="card">
+        <h2>Connected Accounts</h2>
+        <div class="toolbar">
+          <button id="refreshAccounts">Refresh Accounts</button>
+        </div>
+        <div id="accountsList"></div>
       </section>
 
       <section class="card">
@@ -219,6 +229,7 @@
       const outreachListEl = document.getElementById("outreachList");
       const scanSectionEl = document.getElementById("scanSection");
       const scanResultEl = document.getElementById("scanResult");
+      const accountsListEl = document.getElementById("accountsList");
       const adminControlsEl = document.getElementById("adminControls");
       const connectorKeyResultEl = document.getElementById("connectorKeyResult");
       const connectorKeysListEl = document.getElementById("connectorKeysList");
@@ -230,6 +241,7 @@
       const usersListEl = document.getElementById("usersList");
       const refreshKolsButton = document.getElementById("refreshKols");
       const rescoreResultEl = document.getElementById("rescoreResult");
+      const refreshAccountsButton = document.getElementById("refreshAccounts");
       let currentRole = "";
       let stream = null;
 
@@ -337,11 +349,25 @@
         const data = await res.json();
         alertEndpointsListEl.innerHTML = data.length ? data.map((row) => `
           <div class="item">
-            <b>${esc(row.name)}</b>
-            <div><small>${esc(row.url)}</small></div>
-            <small>min score: ${row.min_harmful_score}</small>
+            <b>#${row.id} ${esc(row.name || "(unnamed)")}</b>
+            <span class="pill ${row.is_active ? "connected" : "disconnected"}">${row.is_active ? "active" : "inactive"}</span>
+            <div><small>${esc(row.url || "no-url")}</small></div>
+            <small>min score: ${Number(row.min_harmful_score ?? 0).toFixed(2)}</small>
           </div>
         `).join("") : "<small>No alert endpoints yet.</small>";
+      }
+
+      async function loadConnectedAccounts() {
+        const res = await api("/api/connectors/accounts");
+        const data = await res.json();
+        const rows = data.accounts || [];
+        accountsListEl.innerHTML = rows.length ? rows.map((row) => `
+          <div class="item">
+            <b>${esc(row.platform)}</b>
+            <span class="pill ${row.connected ? "connected" : "disconnected"}">${row.connected ? "connected" : "not connected"}</span>
+            <div><small>mode=${esc(row.mode || "n/a")} | keys=${Number(row.active_connector_keys || 0)}</small></div>
+          </div>
+        `).join("") : "<small>No platform account status available.</small>";
       }
 
       async function loadAuditLogs() {
@@ -475,6 +501,10 @@
 
       refreshKolsButton.addEventListener("click", () => {
         loadKols().catch((err) => alert(err.message));
+      });
+
+      refreshAccountsButton.addEventListener("click", () => {
+        loadConnectedAccounts().catch((err) => alert(err.message));
       });
 
       document.getElementById("rescoreForm").addEventListener("submit", async (e) => {
@@ -644,7 +674,7 @@
           alertEndpointsSectionEl.classList.toggle("hidden", currentRole !== "admin");
           auditSectionEl.classList.toggle("hidden", currentRole !== "admin");
           usersSectionEl.classList.toggle("hidden", currentRole !== "admin");
-          await refreshAll();
+          await Promise.all([refreshAll(), loadConnectedAccounts()]);
           if (currentRole === "admin") {
             await Promise.all([listConnectorKeys(), listAlertEndpoints(), loadUsers()]);
           }

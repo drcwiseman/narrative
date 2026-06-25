@@ -129,6 +129,8 @@ Authorization: Bearer <token>
 - Configure platform secrets (`X_WEBHOOK_SECRET`, `FACEBOOK_WEBHOOK_SECRET`, `WHATSAPP_WEBHOOK_SECRET`) and verify tokens (`FACEBOOK_WEBHOOK_VERIFY_TOKEN`, `WHATSAPP_WEBHOOK_VERIFY_TOKEN`) for native webhook receivers.
 - Configure Slack (`SLACK_WEBHOOK_URL`, `SLACK_SIGNING_SECRET`, optional `SLACK_VERIFICATION_TOKEN`) for outbound alerts and signed inbound Slack events.
 - Configure `SLACK_WEBHOOK_URL` and `CRM_WEBHOOK_URL` to activate external outbound integrations.
+- Set `APP_BASE_URL` so Slack alerts include one-click dashboard links.
+- Optional severity routing: set `SLACK_CRITICAL_WEBHOOK_URL` and tune `SLACK_ALERT_THRESHOLD` / `SLACK_CRITICAL_THRESHOLD`.
 
 ## Product and UX docs
 

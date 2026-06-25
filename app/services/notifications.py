@@ -6,12 +6,16 @@ from app.config import settings
 from app.models import AlertEndpoint
 from app.observability import METRICS
 from app.security import sign_webhook_payload
+from app.services.integrations import send_slack_notification
 
 
 def dispatch_harmful_alerts(db: Session, payload: dict) -> list[dict]:
     score = float(payload.get("harmful_claim_score") or 0.0)
     endpoints = db.query(AlertEndpoint).filter(AlertEndpoint.is_active == 1).all()
     results: list[dict] = []
+    if score >= settings.slack_alert_threshold:
+        slack_result = send_slack_notification(payload)
+        results.append({"endpoint": "slack", **slack_result})
     for endpoint in endpoints:
         if score < endpoint.min_harmful_score:
             continue
