@@ -14,6 +14,17 @@ class MentionCreate(BaseModel):
     posted_at: datetime | None = None
 
 
+class MentionUpdate(BaseModel):
+    platform: str | None = None
+    author_handle: str | None = None
+    author_name: str | None = None
+    followers: int | None = None
+    engagement_rate: float | None = None
+    constituency: str | None = None
+    content: str | None = None
+    posted_at: datetime | None = None
+
+
 class MentionOut(BaseModel):
     id: int
     platform: str

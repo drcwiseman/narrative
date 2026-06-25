@@ -675,6 +675,26 @@ button.btn-ghost {
   padding: 0.75rem 0.8rem;
 }
 
+.stat-card-link {
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+  font: inherit;
+  color: inherit;
+  transition: border-color 0.15s ease, transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.stat-card-link:hover {
+  border-color: var(--brand);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-sm);
+}
+
+.stat-card-link:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
+}
+
 .stat-label {
   display: block;
   font-size: 0.74rem;
@@ -742,6 +762,22 @@ button.btn-ghost {
   background: var(--pill);
   color: var(--text);
   border: 1px solid transparent;
+}
+
+.pill-link {
+  cursor: pointer;
+  font: inherit;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.pill-link:hover {
+  border-color: var(--brand);
+  background: var(--panel);
+}
+
+.pill-link:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 2px;
 }
 
 .harmful {

@@ -108,3 +108,16 @@ def add_emotion_signal(db: Session, *, mention_id: int, emotions: dict[str, floa
         )
     )
     db.commit()
+
+
+def upsert_emotion_signal(db: Session, *, mention_id: int, emotions: dict[str, float]) -> None:
+    row = db.query(EmotionSignal).filter(EmotionSignal.mention_id == mention_id).first()
+    if row is None:
+        add_emotion_signal(db, mention_id=mention_id, emotions=emotions)
+        return
+    row.anger = float(emotions.get("anger", 0.0))
+    row.fear = float(emotions.get("fear", 0.0))
+    row.hope = float(emotions.get("hope", 0.0))
+    row.confusion = float(emotions.get("confusion", 0.0))
+    row.trust = float(emotions.get("trust", 0.0))
+    db.commit()

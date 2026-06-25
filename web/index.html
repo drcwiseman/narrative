@@ -418,16 +418,46 @@
         <div id="executiveOverview"></div>
       </section>
 
-      <section class="card page-card" data-page="monitoring">
+      <section class="card page-card" data-page="monitoring" id="liveMentionFeed">
         <div class="card-head">
           <div>
             <h2>Live Mention Feed</h2>
             <p class="card-desc">Incoming social mentions analyzed in real time.</p>
           </div>
+          <button id="refreshMentions" type="button" class="btn-secondary">Refresh</button>
         </div>
         <div id="mentions"></div>
+        <form id="updateMentionForm" class="form-grid form-narrow form-section">
+          <h3>Edit Mention</h3>
+          <p class="card-desc">Select a mention below, or enter an ID to load it for editing.</p>
+          <div class="form-row-2">
+            <div>
+              <label for="editMentionId">Mention ID</label>
+              <input id="editMentionId" name="mention_id" type="number" placeholder="Mention ID" required />
+            </div>
+            <div class="row" style="align-items:flex-end;">
+              <button id="loadMentionForEdit" type="button" class="btn-secondary">Load</button>
+            </div>
+          </div>
+          <div><label for="editMentionPlatform">Platform</label><input id="editMentionPlatform" name="platform" placeholder="x, facebook, whatsapp" required /></div>
+          <div class="form-row-2">
+            <div><label for="editMentionHandle">Author handle</label><input id="editMentionHandle" name="author_handle" placeholder="@handle" required /></div>
+            <div><label for="editMentionName">Author name</label><input id="editMentionName" name="author_name" placeholder="Display name" /></div>
+          </div>
+          <div class="form-row-2">
+            <div><label for="editMentionFollowers">Followers</label><input id="editMentionFollowers" name="followers" type="number" value="0" /></div>
+            <div><label for="editMentionEngagement">Engagement rate</label><input id="editMentionEngagement" name="engagement_rate" type="number" step="0.01" value="0" /></div>
+          </div>
+          <div><label for="editMentionConstituency">Constituency</label><input id="editMentionConstituency" name="constituency" placeholder="central" required /></div>
+          <div><label for="editMentionContent">Mention text</label><textarea id="editMentionContent" name="content" placeholder="Enter mention content..." required></textarea></div>
+          <div class="toolbar">
+            <button type="submit">Save Changes</button>
+            <button id="deleteMentionBtn" type="button" class="btn-danger">Delete Mention</button>
+          </div>
+        </form>
+        <small id="mentionManageResult"></small>
       </section>
-      <section class="card page-card" data-page="monitoring">
+      <section class="card page-card" data-page="monitoring" id="harmfulAlerts">
         <div class="card-head">
           <div>
             <h2>Harmful Alerts</h2>
@@ -454,7 +484,7 @@
         </div>
       </section>
 
-      <section class="card page-card" data-page="intelligence">
+      <section class="card page-card" data-page="intelligence" id="kolLeaderboard">
         <div class="card-head">
           <div>
             <h2>KOL Leaderboard</h2>
@@ -465,7 +495,7 @@
         <div id="kols"></div>
       </section>
 
-      <section class="card page-card" data-page="intelligence">
+      <section class="card page-card" data-page="intelligence" id="narrativeMapSection">
         <div class="card-head">
           <div>
             <h2>Narrative Map</h2>
@@ -531,7 +561,7 @@
         <div id="spreadAnalysisResult"></div>
       </section>
 
-      <section class="card page-card" data-page="intelligence">
+      <section class="card page-card" data-page="intelligence" id="aiAssistantSection">
         <div class="card-head">
           <div>
             <h2>AI Assistant</h2>
@@ -587,6 +617,15 @@
       const userAvatarEl = document.getElementById("userAvatar");
       const executiveOverviewEl = document.getElementById("executiveOverview");
       const mentionsEl = document.getElementById("mentions");
+      const mentionManageResultEl = document.getElementById("mentionManageResult");
+      const editMentionIdEl = document.getElementById("editMentionId");
+      const editMentionPlatformEl = document.getElementById("editMentionPlatform");
+      const editMentionHandleEl = document.getElementById("editMentionHandle");
+      const editMentionNameEl = document.getElementById("editMentionName");
+      const editMentionFollowersEl = document.getElementById("editMentionFollowers");
+      const editMentionEngagementEl = document.getElementById("editMentionEngagement");
+      const editMentionConstituencyEl = document.getElementById("editMentionConstituency");
+      const editMentionContentEl = document.getElementById("editMentionContent");
       const alertsEl = document.getElementById("alerts");
       const kolsEl = document.getElementById("kols");
       const narrativeMapResultEl = document.getElementById("narrativeMapResult");
@@ -645,6 +684,18 @@
       let currentRole = "";
       let stream = null;
 
+      function isPlatformAdminRole(role) {
+        return role === "admin" || role === "platform_admin";
+      }
+
+      function isOrgAdminRole(role) {
+        return isPlatformAdminRole(role) || role === "org_admin";
+      }
+
+      function canUseAnalystTools(role) {
+        return isOrgAdminRole(role) || role === "coordinator" || role === "analyst";
+      }
+
       function esc(text) {
         return String(text).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
       }
@@ -658,6 +709,24 @@
       function pageFromHash() {
         const value = String(window.location.hash || "").replace("#", "").trim().toLowerCase();
         return VALID_PAGES.has(value) ? value : "dashboard";
+      }
+
+      async function navigateToPage(page, scrollTargetId) {
+        const activePage = VALID_PAGES.has(page) ? page : "dashboard";
+        window.location.hash = activePage;
+        applySidebarPage(activePage);
+        if (!scrollTargetId) return;
+        if (activePage === "intelligence") {
+          try {
+            await loadIntelligencePage();
+          } catch (err) {
+            console.error(err);
+          }
+        }
+        requestAnimationFrame(() => {
+          const target = document.getElementById(scrollTargetId);
+          if (target) target.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
       }
 
       function applySidebarPage(page) {
@@ -675,7 +744,7 @@
         if (activePage === "intelligence") {
           loadIntelligencePage().catch(console.error);
         }
-        if (activePage === "settings" && currentRole === "admin") {
+        if (activePage === "settings" && isPlatformAdminRole(currentRole)) {
           loadUsers().catch(console.error);
         }
       }
@@ -722,14 +791,37 @@
         mentionsEl.innerHTML = data.map((row) => `
           <div class="feed-item">
             <div class="feed-meta">
-              <b>${esc(row.author_handle)}</b>
+              <b>#${row.id} ${esc(row.author_handle)}</b>
               <span class="pill">${esc(row.platform)}</span>
               ${row.is_harmful ? '<span class="pill harmful">High risk</span>' : ""}
             </div>
             <div class="feed-body">${esc(row.content)}</div>
             <small>topic=${esc(row.topic)} · sentiment=${row.sentiment_score} · harmful=${row.harmful_claim_score}</small>
+            <div class="toolbar">
+              <button type="button" class="btn-secondary" data-edit-mention="${row.id}">Edit</button>
+              <button type="button" class="btn-danger" data-delete-mention="${row.id}">Delete</button>
+            </div>
           </div>
         `).join("");
+      }
+
+      function fillMentionEditForm(mention) {
+        editMentionIdEl.value = String(mention.id);
+        editMentionPlatformEl.value = mention.platform || "";
+        editMentionHandleEl.value = mention.author_handle || "";
+        editMentionNameEl.value = mention.author_name || "";
+        editMentionFollowersEl.value = String(mention.followers ?? 0);
+        editMentionEngagementEl.value = String(mention.engagement_rate ?? 0);
+        editMentionConstituencyEl.value = mention.constituency || "";
+        editMentionContentEl.value = mention.content || "";
+      }
+
+      async function loadMentionForEdit(mentionId) {
+        const res = await api(`/api/mentions/${mentionId}`);
+        const mention = await res.json();
+        fillMentionEditForm(mention);
+        mentionManageResultEl.textContent = `Loaded mention #${mention.id} for editing.`;
+        return mention;
       }
 
       async function loadExecutiveOverview() {
@@ -738,18 +830,38 @@
         const emotion = data.emotion_mix || {};
         executiveOverviewEl.innerHTML = `
           <div class="stat-grid">
-            <div class="stat-card"><span class="stat-label">Active Narratives</span><span class="stat-value">${data.active_narratives}</span></div>
-            <div class="stat-card"><span class="stat-label">Mentions</span><span class="stat-value">${data.mentions}</span></div>
-            <div class="stat-card"><span class="stat-label">Misinformation Alerts</span><span class="stat-value">${data.misinformation_alerts}</span></div>
-            <div class="stat-card"><span class="stat-label">Influential Voices</span><span class="stat-value">${data.influential_voices}</span></div>
-            <div class="stat-card"><span class="stat-label">Average Sentiment</span><span class="stat-value">${data.average_sentiment}</span></div>
+            <button type="button" class="stat-card stat-card-link" data-nav-page="intelligence" data-scroll-target="narrativeMapSection" aria-label="View active narratives">
+              <span class="stat-label">Active Narratives</span>
+              <span class="stat-value">${data.active_narratives}</span>
+              <span class="stat-meta">Open narrative map →</span>
+            </button>
+            <button type="button" class="stat-card stat-card-link" data-nav-page="monitoring" data-scroll-target="liveMentionFeed" aria-label="View live mentions">
+              <span class="stat-label">Mentions</span>
+              <span class="stat-value">${data.mentions}</span>
+              <span class="stat-meta">Open live feed →</span>
+            </button>
+            <button type="button" class="stat-card stat-card-link" data-nav-page="monitoring" data-scroll-target="harmfulAlerts" aria-label="View misinformation alerts">
+              <span class="stat-label">Misinformation Alerts</span>
+              <span class="stat-value">${data.misinformation_alerts}</span>
+              <span class="stat-meta">Open harmful alerts →</span>
+            </button>
+            <button type="button" class="stat-card stat-card-link" data-nav-page="intelligence" data-scroll-target="kolLeaderboard" aria-label="View influential voices">
+              <span class="stat-label">Influential Voices</span>
+              <span class="stat-value">${data.influential_voices}</span>
+              <span class="stat-meta">Open KOL leaderboard →</span>
+            </button>
+            <button type="button" class="stat-card stat-card-link" data-nav-page="intelligence" data-scroll-target="narrativeMapSection" aria-label="View sentiment breakdown">
+              <span class="stat-label">Average Sentiment</span>
+              <span class="stat-value">${data.average_sentiment}</span>
+              <span class="stat-meta">Explore narratives →</span>
+            </button>
           </div>
           <div class="emotion-row">
-            <span class="pill">anger ${emotion.anger ?? 0}</span>
-            <span class="pill">fear ${emotion.fear ?? 0}</span>
-            <span class="pill">hope ${emotion.hope ?? 0}</span>
-            <span class="pill">confusion ${emotion.confusion ?? 0}</span>
-            <span class="pill">trust ${emotion.trust ?? 0}</span>
+            <button type="button" class="pill pill-link" data-nav-page="intelligence" data-scroll-target="aiAssistantSection" aria-label="Explore anger sentiment">anger ${emotion.anger ?? 0}</button>
+            <button type="button" class="pill pill-link" data-nav-page="intelligence" data-scroll-target="aiAssistantSection" aria-label="Explore fear sentiment">fear ${emotion.fear ?? 0}</button>
+            <button type="button" class="pill pill-link" data-nav-page="intelligence" data-scroll-target="aiAssistantSection" aria-label="Explore hope sentiment">hope ${emotion.hope ?? 0}</button>
+            <button type="button" class="pill pill-link" data-nav-page="intelligence" data-scroll-target="aiAssistantSection" aria-label="Explore confusion sentiment">confusion ${emotion.confusion ?? 0}</button>
+            <button type="button" class="pill pill-link" data-nav-page="intelligence" data-scroll-target="aiAssistantSection" aria-label="Explore trust sentiment">trust ${emotion.trust ?? 0}</button>
           </div>
         `;
       }
@@ -1226,13 +1338,19 @@
         stream = new EventSource(`/api/monitoring/stream?token=${encodeURIComponent(token)}`);
         stream.onmessage = (event) => {
           const data = JSON.parse(event.data);
-          if (data.type === "mention_ingested") refreshAll().catch(console.error);
+          if (data.type === "mention_ingested" || data.type === "mention_updated") refreshAll().catch(console.error);
         };
         stream.onerror = () => {
           if (stream) stream.close();
           stream = null;
         };
       }
+
+      executiveOverviewEl.addEventListener("click", (e) => {
+        const trigger = e.target.closest("[data-nav-page]");
+        if (!trigger) return;
+        navigateToPage(trigger.dataset.navPage, trigger.dataset.scrollTarget || "").catch(console.error);
+      });
 
       document.getElementById("logoutBtn").addEventListener("click", clearSessionAndRedirect);
       for (const link of navLinks) {
@@ -1254,6 +1372,83 @@
             body: JSON.stringify(payload),
           });
           e.target.reset();
+          await refreshAll();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("refreshMentions").addEventListener("click", () => {
+        loadMentions().catch((err) => alert(err.message));
+      });
+
+      mentionsEl.addEventListener("click", async (e) => {
+        const editBtn = e.target.closest("[data-edit-mention]");
+        const deleteBtn = e.target.closest("[data-delete-mention]");
+        try {
+          if (editBtn) {
+            await loadMentionForEdit(editBtn.dataset.editMention);
+            return;
+          }
+          if (deleteBtn) {
+            const mentionId = Number(deleteBtn.dataset.deleteMention);
+            if (!confirm(`Delete mention #${mentionId}? This removes analysis and related signals.`)) return;
+            await api(`/api/mentions/${mentionId}`, { method: "DELETE" });
+            mentionManageResultEl.textContent = `Mention #${mentionId} deleted.`;
+            document.getElementById("updateMentionForm").reset();
+            await refreshAll();
+          }
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("loadMentionForEdit").addEventListener("click", async () => {
+        try {
+          const mentionId = Number(editMentionIdEl.value);
+          if (!mentionId) return alert("Enter a mention ID");
+          await loadMentionForEdit(mentionId);
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("updateMentionForm").addEventListener("submit", async (e) => {
+        e.preventDefault();
+        try {
+          const mentionId = Number(editMentionIdEl.value);
+          if (!mentionId) return alert("Enter a mention ID");
+          const payload = {
+            platform: editMentionPlatformEl.value.trim(),
+            author_handle: editMentionHandleEl.value.trim(),
+            author_name: editMentionNameEl.value.trim(),
+            followers: Number(editMentionFollowersEl.value || 0),
+            engagement_rate: Number(editMentionEngagementEl.value || 0),
+            constituency: editMentionConstituencyEl.value.trim(),
+            content: editMentionContentEl.value.trim(),
+          };
+          const res = await api(`/api/mentions/${mentionId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          mentionManageResultEl.textContent = `Mention #${mentionId} updated.`;
+          if (data.mention) fillMentionEditForm(data.mention);
+          await refreshAll();
+        } catch (err) {
+          alert(err.message);
+        }
+      });
+
+      document.getElementById("deleteMentionBtn").addEventListener("click", async () => {
+        try {
+          const mentionId = Number(editMentionIdEl.value);
+          if (!mentionId) return alert("Enter a mention ID");
+          if (!confirm(`Delete mention #${mentionId}? This removes analysis and related signals.`)) return;
+          await api(`/api/mentions/${mentionId}`, { method: "DELETE" });
+          mentionManageResultEl.textContent = `Mention #${mentionId} deleted.`;
+          document.getElementById("updateMentionForm").reset();
           await refreshAll();
         } catch (err) {
           alert(err.message);
@@ -1834,20 +2029,20 @@
             userAvatarEl.textContent = String(displayName).trim().charAt(0).toUpperCase();
           }
           renderProfile(me);
-          setRoleSectionVisibility(adminControlsEl, currentRole === "admin");
-          setRoleSectionVisibility(platformConnectionsSectionEl, currentRole === "admin");
-          setRoleSectionVisibility(scanSectionEl, ["admin", "coordinator", "analyst"].includes(currentRole));
-          setRoleSectionVisibility(googleScanSectionEl, ["admin", "coordinator", "analyst"].includes(currentRole));
-          setRoleSectionVisibility(alertEndpointsSectionEl, currentRole === "admin");
-          setRoleSectionVisibility(auditSectionEl, currentRole === "admin");
-          setRoleSectionVisibility(usersSectionEl, currentRole === "admin");
-          setRoleSectionVisibility(detectionRulesSectionEl, currentRole === "admin");
+          setRoleSectionVisibility(adminControlsEl, isPlatformAdminRole(currentRole));
+          setRoleSectionVisibility(platformConnectionsSectionEl, isPlatformAdminRole(currentRole));
+          setRoleSectionVisibility(scanSectionEl, canUseAnalystTools(currentRole));
+          setRoleSectionVisibility(googleScanSectionEl, canUseAnalystTools(currentRole));
+          setRoleSectionVisibility(alertEndpointsSectionEl, isPlatformAdminRole(currentRole));
+          setRoleSectionVisibility(auditSectionEl, isPlatformAdminRole(currentRole));
+          setRoleSectionVisibility(usersSectionEl, isPlatformAdminRole(currentRole));
+          setRoleSectionVisibility(detectionRulesSectionEl, isPlatformAdminRole(currentRole));
           const bootstrapTasks = [refreshAll(), loadConnectedAccounts()];
-          if (["admin", "coordinator", "analyst"].includes(currentRole)) {
+          if (canUseAnalystTools(currentRole)) {
             bootstrapTasks.push(loadGoogleHealth());
           }
           await Promise.all(bootstrapTasks);
-          if (currentRole === "admin") {
+          if (isPlatformAdminRole(currentRole)) {
             await Promise.all([
               listConnectorKeys(),
               listAlertEndpoints(),
